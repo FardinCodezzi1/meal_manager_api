@@ -170,18 +170,18 @@ export async function DELETE(req: Request) {
     }
 
     const body = await req.json().catch(() => ({}));
-    const { password } = body;
+    const { password, force } = body;
 
     if (!password) {
-      return errorResponse('Manager password confirmation is required to delete the mess', 400);
+      return errorResponse('Manager password confirmation is required to close the mess', 400);
     }
 
     const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
     if (!isPasswordValid) {
-      return errorResponse('Invalid manager password. Mess deletion aborted.', 401);
+      return errorResponse('Invalid manager password. Mess closure aborted.', 401);
     }
 
-    // Guard: Check if other active members exist
+    // Check if other active members exist
     const otherActiveMembers = await prisma.messMember.findMany({
       where: {
         messId: activeMembership.messId,
@@ -190,7 +190,7 @@ export async function DELETE(req: Request) {
       },
     });
 
-    if (otherActiveMembers.length > 0) {
+    if (otherActiveMembers.length > 0 && !force) {
       return errorResponse(
         `Cannot delete mess: There are still ${otherActiveMembers.length} other active member(s) in this mess. All other members must leave the mess first, or you must transfer the manager role before deleting.`,
         400
@@ -203,7 +203,7 @@ export async function DELETE(req: Request) {
     });
 
     return jsonResponse({
-      message: 'Mess deleted successfully. All associated mess data has been cleaned up, and you are now free to create or join another mess.',
+      message: 'Mess closed and deleted successfully. All members have been released, and you are now free to create or join another mess.',
     });
   } catch (error: unknown) {
     const err = error as Error;
