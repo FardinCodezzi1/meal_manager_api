@@ -3,10 +3,10 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "nest start --watch",
+    "dev": "node init && nest start --watch",
     "start:dev": "nest start --watch",
-    "build": "prisma generate && nest build",
-    "start": "node dist/main",
+    "build": "node init && prisma generate && nest build",
+    "start": "node init && node dist/main",
     "start:prod": "node dist/main",
     "db:push": "prisma db push",
     "db:generate": "prisma generate",

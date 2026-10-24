@@ -4,7 +4,17 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
+import * as crypto from 'crypto';
 import { PrismaService } from '@/prisma/prisma.service';
+
+function generateAdminMessCode(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let result = 'MESS-';
+  for (let i = 0; i < 5; i++) {
+    result += chars.charAt(crypto.randomInt(0, chars.length));
+  }
+  return result;
+}
 
 @Injectable()
 export class AdminService {
@@ -228,6 +238,176 @@ export class AdminService {
       message: 'User details updated successfully by Super Admin',
       passwordReset,
       user: updatedUser,
+    };
+  }
+
+  async createUser(body: { name: string; email: string; password: string; phone?: string; isSuperAdmin?: boolean }) {
+    const { name, email, password, phone, isSuperAdmin } = body;
+    if (!name?.trim()) throw new BadRequestException('Name is required');
+    if (!email?.trim() || !email.includes('@')) throw new BadRequestException('Valid email is required');
+    if (!password || password.length < 6) throw new BadRequestException('Password must be at least 6 characters');
+
+    const normalizedEmail = email.toLowerCase().trim();
+    const existing = await this.prisma.user.findUnique({ where: { email: normalizedEmail } });
+    if (existing) throw new BadRequestException('Email address is already registered');
+
+    const passwordHash = await bcrypt.hash(password, 10);
+    const user = await this.prisma.user.create({
+      data: {
+        name: name.trim(),
+        email: normalizedEmail,
+        phone: phone ? phone.trim() : null,
+        passwordHash,
+        isSuperAdmin: Boolean(isSuperAdmin),
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        phone: true,
+        isSuperAdmin: true,
+        createdAt: true,
+      },
+    });
+
+    return {
+      message: `User "${user.name}" created successfully by Super Admin`,
+      user,
+    };
+  }
+
+  async deleteUser(id: string) {
+    const targetUser = await this.prisma.user.findUnique({ where: { id } });
+    if (!targetUser) throw new NotFoundException('User not found');
+
+    // 1. Handle messes managed by this user
+    const managedMesses = await this.prisma.mess.findMany({ where: { managerId: id } });
+    for (const mess of managedMesses) {
+      const anotherMember = await this.prisma.messMember.findFirst({
+        where: { messId: mess.id, userId: { not: id }, status: 'ACTIVE' },
+      });
+      if (anotherMember) {
+        await this.prisma.mess.update({
+          where: { id: mess.id },
+          data: { managerId: anotherMember.userId },
+        });
+        await this.prisma.messMember.update({
+          where: { id: anotherMember.id },
+          data: { role: 'MANAGER' },
+        });
+      } else {
+        // Cascade delete empty mess if no other members exist
+        await this.deleteMess(mess.id);
+      }
+    }
+
+    // 2. Handle tours created by this user
+    const createdTours = await this.prisma.tour.findMany({ where: { creatorId: id } });
+    for (const tour of createdTours) {
+      const anotherTourMember = await this.prisma.tourMember.findFirst({
+        where: { tourId: tour.id, userId: { not: id } },
+      });
+      if (anotherTourMember) {
+        await this.prisma.tour.update({
+          where: { id: tour.id },
+          data: { creatorId: anotherTourMember.userId },
+        });
+      } else {
+        await this.prisma.tourExpense.deleteMany({ where: { tourId: tour.id } });
+        await this.prisma.tourDeposit.deleteMany({ where: { tourId: tour.id } });
+        await this.prisma.tourMember.deleteMany({ where: { tourId: tour.id } });
+        await this.prisma.tour.delete({ where: { id: tour.id } });
+      }
+    }
+
+    // 3. Cascade delete user records and delete user
+    await this.prisma.$transaction([
+      this.prisma.personalNote.deleteMany({ where: { userId: id } }),
+      this.prisma.tourMember.deleteMany({ where: { userId: id } }),
+      this.prisma.dailyMeal.deleteMany({ where: { member: { userId: id } } }),
+      this.prisma.bazarEntry.deleteMany({ where: { member: { userId: id } } }),
+      this.prisma.deposit.deleteMany({ where: { member: { userId: id } } }),
+      this.prisma.leaveRequest.deleteMany({ where: { member: { userId: id } } }),
+      this.prisma.managerSequence.deleteMany({ where: { member: { userId: id } } }),
+      this.prisma.messMember.deleteMany({ where: { userId: id } }),
+      this.prisma.user.delete({ where: { id } }),
+    ]);
+
+    return {
+      message: `User "${targetUser.name}" (${targetUser.email}) permanently deleted by Super Admin.`,
+      deletedUserId: id,
+    };
+  }
+
+  async createMess(body: { name: string; managerId: string; memberIds?: string[] }) {
+    const { name, managerId, memberIds } = body;
+    if (!name?.trim()) throw new BadRequestException('Mess name is required');
+    if (!managerId) throw new BadRequestException('Manager user ID is required');
+
+    const managerUser = await this.prisma.user.findUnique({ where: { id: managerId } });
+    if (!managerUser) throw new NotFoundException('Manager user not found');
+
+    let inviteCode = generateAdminMessCode();
+    let unique = false;
+    while (!unique) {
+      const existing = await this.prisma.mess.findUnique({ where: { inviteCode } });
+      if (!existing) unique = true;
+      else inviteCode = generateAdminMessCode();
+    }
+
+    const currentDate = new Date();
+    const currentMonthKey = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
+
+    const mess = await this.prisma.$transaction(async (tx) => {
+      const m = await tx.mess.create({
+        data: {
+          name: name.trim(),
+          inviteCode,
+          managerId,
+        },
+      });
+
+      // Create manager membership
+      await tx.messMember.create({
+        data: {
+          userId: managerId,
+          messId: m.id,
+          role: 'MANAGER',
+          status: 'ACTIVE',
+        },
+      });
+
+      // Create initial active month
+      await tx.messMonth.create({
+        data: {
+          messId: m.id,
+          monthKey: currentMonthKey,
+          status: 'OPEN',
+        },
+      });
+
+      // If additional members provided, add them as MEMBER
+      if (Array.isArray(memberIds)) {
+        for (const memId of memberIds) {
+          if (memId && memId !== managerId) {
+            await tx.messMember.create({
+              data: {
+                userId: memId,
+                messId: m.id,
+                role: 'MEMBER',
+                status: 'ACTIVE',
+              },
+            });
+          }
+        }
+      }
+
+      return m;
+    });
+
+    return {
+      message: `Mess "${mess.name}" created successfully by Super Admin`,
+      mess,
     };
   }
 }
