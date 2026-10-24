@@ -922,8 +922,132 @@ async function runTests() {
   }
   logSuccess(`Super Admin successfully deleted tour (${tourId}) via /api/tours/[id]`);
 
+  // 24. Manager Rotation Queue & Anti-Cheat Audit Log System
+  logStep('24. Manager Rotation Queue & Anti-Cheat Audit Log System');
+
+  // Register two fresh users for mess rotation testing
+  const regRot1 = await request('/api/auth/register', {
+    method: 'POST',
+    body: JSON.stringify({
+      name: 'Rotation Lead Kamal',
+      email: `kamal_${timestamp}@rottest.com`,
+      password: 'password123',
+    }),
+  });
+  if (regRot1.status !== 201) throw new Error(`Rot user 1 registration failed: ${JSON.stringify(regRot1.data)}`);
+  const tokenRot1 = regRot1.data.token;
+
+  const regRot2 = await request('/api/auth/register', {
+    method: 'POST',
+    body: JSON.stringify({
+      name: 'Rotation Member Jamal',
+      email: `jamal_${timestamp}@rottest.com`,
+      password: 'password123',
+    }),
+  });
+  if (regRot2.status !== 201) throw new Error(`Rot user 2 registration failed: ${JSON.stringify(regRot2.data)}`);
+  const tokenRot2 = regRot2.data.token;
+
+  // Kamal creates a mess
+  const createRotMess = await request('/api/mess/create', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${tokenRot1}` },
+    body: JSON.stringify({ name: `Rotation Mess ${timestamp}` }),
+  });
+  if (createRotMess.status !== 201) throw new Error(`Rot mess creation failed: ${JSON.stringify(createRotMess.data)}`);
+  const rotInviteCode = createRotMess.data.mess.inviteCode;
+  const kamalMemberId = createRotMess.data.membership.id;
+
+  // Jamal joins the mess
+  const joinRotMess = await request('/api/mess/join', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${tokenRot2}` },
+    body: JSON.stringify({ inviteCode: rotInviteCode }),
+  });
+  if (joinRotMess.status !== 200 && joinRotMess.status !== 201) throw new Error(`Jamal join mess failed: ${JSON.stringify(joinRotMess.data)}`);
+  const jamalMemberId = joinRotMess.data.membership.id;
+  logSuccess('Mess created and both members joined');
+
+  // Test 1: GET /api/mess/manager/sequence
+  const seqRes1 = await request('/api/mess/manager/sequence', {
+    headers: { Authorization: `Bearer ${tokenRot1}` },
+  });
+  if (seqRes1.status !== 200 || !seqRes1.data.sequence) {
+    throw new Error(`Failed to get manager sequence: ${JSON.stringify(seqRes1.data)}`);
+  }
+  if (seqRes1.data.currentManagerMemberId !== kamalMemberId) {
+    throw new Error(`Expected currentManagerMemberId to be ${kamalMemberId}, got ${seqRes1.data.currentManagerMemberId}`);
+  }
+  logSuccess(`Sequence initialized successfully with ${seqRes1.data.sequence.length} members. Active Manager: ${seqRes1.data.currentManager.name}`);
+
+  // Test 2: PUT /api/mess/manager/sequence (Reorder: Jamal first, Kamal second)
+  const reorderRes = await request('/api/mess/manager/sequence', {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${tokenRot1}` },
+    body: JSON.stringify({
+      memberIds: [jamalMemberId, kamalMemberId],
+      rotationType: 'MONTHLY',
+      reason: 'Fair rotation schedule agreed in meeting',
+    }),
+  });
+  if (reorderRes.status !== 200) {
+    throw new Error(`Reorder sequence failed: ${JSON.stringify(reorderRes.data)}`);
+  }
+  logSuccess('Manager sequence reordered successfully (Jamal is next in queue)');
+
+  // Test 3: POST /api/mess/manager/transfer (Manual override transfer to Jamal)
+  const rotTransferRes = await request('/api/mess/manager/transfer', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${tokenRot1}` },
+    body: JSON.stringify({
+      targetMemberId: jamalMemberId,
+      reason: 'Emergency transfer for upcoming exams',
+    }),
+  });
+  if (rotTransferRes.status !== 200) {
+    throw new Error(`Manager transfer failed: ${JSON.stringify(rotTransferRes.data)}`);
+  }
+  logSuccess(`Manual manager role override successful! New active manager: ${rotTransferRes.data.transfer.newManager.name}`);
+
+  // Test 4: GET /api/mess/manager/logs (Verify audit transparency)
+  const logsRes = await request('/api/mess/manager/logs', {
+    headers: { Authorization: `Bearer ${tokenRot2}` },
+  });
+  if (logsRes.status !== 200 || !logsRes.data.logs) {
+    throw new Error(`Failed to fetch manager audit logs: ${JSON.stringify(logsRes.data)}`);
+  }
+  const hasManualOverride = logsRes.data.logs.some((l: { action: string }) => l.action === 'MANUAL_OVERRIDE');
+  const hasReorder = logsRes.data.logs.some((l: { action: string }) => l.action === 'SEQUENCE_REORDERED');
+  if (!hasManualOverride || !hasReorder) {
+    throw new Error(`Expected audit logs to contain MANUAL_OVERRIDE and SEQUENCE_REORDERED, got: ${JSON.stringify(logsRes.data.logs)}`);
+  }
+  logSuccess(`Anti-cheat audit logs verified: ${logsRes.data.logs.length} immutable log entries with full actor accountability`);
+
+  // Test 5: Automatic monthly rotation hook on new month creation (/api/mess/months)
+  // Currently Jamal is manager. Next in sequence [jamalMemberId, kamalMemberId] should be Kamal!
+  const newMonthRotRes = await request('/api/mess/months', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${tokenRot2}` },
+    body: JSON.stringify({ monthKey: '2026-08' }),
+  });
+  if (newMonthRotRes.status !== 201 || !newMonthRotRes.data.managerRotation?.rotated) {
+    throw new Error(`Automatic rotation hook failed: ${JSON.stringify(newMonthRotRes.data)}`);
+  }
+  const rotInfo = newMonthRotRes.data.managerRotation;
+  logSuccess(`Automatic rotation triggered on new month! Demoted: ${rotInfo.previousManager.name}, Promoted to Manager: ${rotInfo.newManager.name}`);
+
+  // Verify the audit log for automatic monthly rotation
+  const logsAfterMonth = await request('/api/mess/manager/logs', {
+    headers: { Authorization: `Bearer ${tokenRot1}` },
+  });
+  const hasAutoRotateLog = logsAfterMonth.data.logs.some((l: { action: string }) => l.action === 'AUTOMATIC_MONTHLY_ROTATION');
+  if (!hasAutoRotateLog) {
+    throw new Error('Audit log for AUTOMATIC_MONTHLY_ROTATION was not found');
+  }
+  logSuccess('Audit entry for AUTOMATIC_MONTHLY_ROTATION confirmed in immutable logs!');
+
   console.log('\n\x1b[32m=======================================================');
-  console.log('🎉 ALL EXTENDED INTEGRATION TESTS PASSED! (23/23)');
+  console.log('🎉 ALL EXTENDED INTEGRATION TESTS PASSED! (24/24)');
   console.log('=======================================================\x1b[0m\n');
 }
 

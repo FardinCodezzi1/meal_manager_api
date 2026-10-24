@@ -407,6 +407,76 @@ export const openApiSpec = {
         },
       },
     },
+    '/api/mess/manager/sequence': {
+      get: {
+        tags: ['Manager Rotation & Audit'],
+        summary: 'Get rotation queue of members and currently active manager',
+        responses: {
+          200: { description: 'Manager rotation queue order and active manager' },
+          400: { description: 'Not in active mess' },
+        },
+      },
+      put: {
+        tags: ['Manager Rotation & Audit'],
+        summary: 'Reorder manager rotation queue (auto logs to audit log)',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['memberIds'],
+                properties: {
+                  memberIds: { type: 'array', items: { type: 'string' } },
+                  rotationType: { type: 'string', enum: ['MONTHLY', 'WEEKLY', 'MANUAL'] },
+                  reason: { type: 'string' },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: { description: 'Rotation queue reordered successfully' },
+          400: { description: 'Validation error' },
+        },
+      },
+    },
+    '/api/mess/manager/transfer': {
+      post: {
+        tags: ['Manager Rotation & Audit'],
+        summary: 'Manual override to transfer manager role to another member (creates immutable audit log)',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['targetMemberId'],
+                properties: {
+                  targetMemberId: { type: 'string', example: 'cmvm...' },
+                  reason: { type: 'string', example: 'Current manager traveling this month' },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: { description: 'Manager role transferred' },
+          400: { description: 'Bad request or target already manager' },
+          404: { description: 'Target member not found' },
+        },
+      },
+    },
+    '/api/mess/manager/logs': {
+      get: {
+        tags: ['Manager Rotation & Audit'],
+        summary: 'Get complete audit history of manager changes and queue overrides',
+        responses: {
+          200: { description: 'Audit history of manager actions' },
+          400: { description: 'Not in active mess' },
+        },
+      },
+    },
     '/api/meals': {
       get: {
         tags: ['Meals & Leaves'],
