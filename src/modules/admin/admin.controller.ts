@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Post,
   Put,
   Delete,
   Param,
@@ -19,6 +20,21 @@ export class AdminController {
   @Get()
   async getPlatformData() {
     return this.adminService.getPlatformData();
+  }
+
+  @Post('users')
+  async createUser(@Body() body: any) {
+    return this.adminService.createUser(body);
+  }
+
+  @Delete('users/:id')
+  async deleteUser(@Param('id') id: string) {
+    return this.adminService.deleteUser(id);
+  }
+
+  @Post('messes')
+  async createMess(@Body() body: any) {
+    return this.adminService.createMess(body);
   }
 
   @Delete('messes/:id')
