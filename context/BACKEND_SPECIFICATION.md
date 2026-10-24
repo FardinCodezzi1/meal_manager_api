@@ -19,9 +19,9 @@ This document provides complete, production-ready specifications for building th
 ## 2. Environment Variables (`.env`)
 
 ```env
-# Neon PostgreSQL Connection URLs
-DATABASE_URL="postgresql://neondb_owner:npg_TGved5bn0ZYx@ep-floral-breeze-azrjh0ey-pooler.c-3.ap-southeast-1.aws.neon.tech/neondb?channel_binding=require&sslmode=require"
-DIRECT_URL="postgresql://neondb_owner:npg_TGved5bn0ZYx@ep-floral-breeze-azrjh0ey.c-3.ap-southeast-1.aws.neon.tech/neondb?sslmode=require"
+# Neon PostgreSQL Connection URLs (Use private values from .env, do not commit real passwords)
+DATABASE_URL="postgresql://neondb_owner:YOUR_DATABASE_PASSWORD@ep-floral-breeze-azrjh0ey-pooler.c-3.ap-southeast-1.aws.neon.tech/neondb?channel_binding=require&sslmode=require"
+DIRECT_URL="postgresql://neondb_owner:YOUR_DATABASE_PASSWORD@ep-floral-breeze-azrjh0ey.c-3.ap-southeast-1.aws.neon.tech/neondb?sslmode=require"
 
 # JWT Secret Key
 JWT_SECRET="super-secret-jwt-key-change-in-production-32-chars-min"

@@ -1,0 +1,170 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id            String         @id @default(cuid())
+  email         String         @unique
+  name          String
+  passwordHash  String
+  phone         String?
+  isSuperAdmin  Boolean        @default(false)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  memberships   MessMember[]
+  personalNotes PersonalNote[]
+}
+
+model Mess {
+  id         String       @id @default(cuid())
+  name       String
+  inviteCode String       @unique
+  managerId  String
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+  members    MessMember[]
+  months     MessMonth[]
+}
+
+model MessMember {
+  id            String           @id @default(cuid())
+  userId        String
+  messId        String
+  role          Role             @default(MEMBER)
+  status        MembershipStatus @default(ACTIVE)
+  joinedAt      DateTime         @default(now())
+  leftAt        DateTime?
+  bazarEntries  BazarEntry[]
+  dailyMeals    DailyMeal[]
+  deposits      Deposit[]
+  leaveRequests LeaveRequest[]
+  mess          Mess             @relation(fields: [messId], references: [id], onDelete: Cascade)
+  user          User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, status])
+}
+
+model MessMonth {
+  id           String       @id @default(cuid())
+  messId       String
+  monthKey     String
+  status       String       @default("OPEN")
+  createdAt    DateTime     @default(now())
+  bazarEntries BazarEntry[]
+  dailyMeals   DailyMeal[]
+  deposits     Deposit[]
+  mess         Mess         @relation(fields: [messId], references: [id], onDelete: Cascade)
+
+  @@unique([messId, monthKey])
+}
+
+model BazarEntry {
+  id          String         @id @default(cuid())
+  messMonthId String
+  memberId    String
+  amount      Float
+  category    String
+  date        DateTime
+  status      ApprovalStatus @default(APPROVED)
+  mode        BazarMode      @default(QUICK)
+  items       Json?
+  notes       String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  member      MessMember     @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  messMonth   MessMonth      @relation(fields: [messMonthId], references: [id], onDelete: Cascade)
+}
+
+model Deposit {
+  id          String     @id @default(cuid())
+  messMonthId String
+  memberId    String
+  amount      Float
+  date        DateTime
+  notes       String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  member      MessMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  messMonth   MessMonth  @relation(fields: [messMonthId], references: [id], onDelete: Cascade)
+}
+
+model DailyMeal {
+  id          String     @id @default(cuid())
+  messMonthId String
+  memberId    String
+  date        DateTime
+  lunch       Float      @default(1.0)
+  dinner      Float      @default(1.0)
+  isLeave     Boolean    @default(false)
+  updatedAt   DateTime   @updatedAt
+  member      MessMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  messMonth   MessMonth  @relation(fields: [messMonthId], references: [id], onDelete: Cascade)
+
+  @@unique([memberId, date])
+}
+
+model LeaveRequest {
+  id        String         @id @default(cuid())
+  memberId  String
+  startDate DateTime
+  endDate   DateTime
+  reason    String?
+  status    ApprovalStatus @default(PENDING)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  member    MessMember     @relation(fields: [memberId], references: [id], onDelete: Cascade)
+}
+
+model PersonalNote {
+  id          String   @id @default(cuid())
+  userId      String
+  title       String
+  content     String
+  isChecklist Boolean  @default(false)
+  items       Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model AppConfig {
+  id                 String   @id @default("global-config")
+  appName            String   @default("Mess Meal Manager")
+  appIconSvg         String?  @db.Text
+  creatorName        String   @default("Fardin Abu Ubaid")
+  creatorEmail       String   @default("fardin1.codezzi@gmail.com")
+  creatorPortfolio   String   @default("https://portfolio-fardin.vercel.app")
+  creatorBio         String?  @default("Full-Stack Developer & Creator of Mess Meal Manager")
+  broadcastNotice    String?
+  noticeActive       Boolean  @default(false)
+  updatedAt          DateTime @updatedAt
+}
+
+enum Role {
+  MANAGER
+  MEMBER
+}
+
+enum MembershipStatus {
+  ACTIVE
+  LEFT
+  REMOVED
+}
+
+enum ApprovalStatus {
+  DRAFT
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum BazarMode {
+  QUICK
+  CHECKLIST
+}
