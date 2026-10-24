@@ -739,8 +739,191 @@ async function runTests() {
   }
   logSuccess(`Verified: User logged in successfully with the newly reset credentials! Name is now: ${newLoginSuccess.data.user.name}`);
 
+  // 23. Tour Expense Management System Flow
+  logStep('23. Tour Expense Management System (Creation, Roles, Deposits, Expenses, Balances & Super Admin Oversight)');
+
+  // Register Tour Lead & Tour Member
+  const regTourLead = await request('/api/auth/register', {
+    method: 'POST',
+    body: JSON.stringify({
+      name: 'Tour Lead Dave',
+      email: `lead_${timestamp}@tourtest.com`,
+      password: 'password123',
+      phone: '+8801811112222',
+    }),
+  });
+  if (regTourLead.status !== 201) throw new Error(`Tour lead registration failed: ${JSON.stringify(regTourLead.data)}`);
+  const tourLeadToken = regTourLead.data.token;
+
+  const regTourMember = await request('/api/auth/register', {
+    method: 'POST',
+    body: JSON.stringify({
+      name: 'Tour Accountant Emma',
+      email: `emma_${timestamp}@tourtest.com`,
+      password: 'password123',
+      phone: '+8801833334444',
+    }),
+  });
+  if (regTourMember.status !== 201) throw new Error(`Tour member registration failed: ${JSON.stringify(regTourMember.data)}`);
+  const tourMemberToken = regTourMember.data.token;
+
+  // Step A: Create Tour (Lead Dave is Lead)
+  const createTourRes = await request('/api/tours', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${tourLeadToken}` },
+    body: JSON.stringify({
+      name: `Cox's Bazar Sea Vacation ${timestamp}`,
+      destination: "Cox's Bazar",
+      budget: 30000,
+      description: 'Annual team retreat',
+    }),
+  });
+  if (createTourRes.status !== 201 || !createTourRes.data.tour) {
+    throw new Error(`Failed to create tour: ${JSON.stringify(createTourRes.data)}`);
+  }
+  const tourId = createTourRes.data.tour.id;
+  const tourInviteCode = createTourRes.data.tour.inviteCode;
+  logSuccess(`Tour created: "${createTourRes.data.tour.name}" with Invite Code: ${tourInviteCode}`);
+
+  // Step B: Emma joins tour via invite code
+  const joinTourRes = await request('/api/tours/join', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${tourMemberToken}` },
+    body: JSON.stringify({ inviteCode: tourInviteCode }),
+  });
+  if (joinTourRes.status !== 201) {
+    throw new Error(`Emma failed to join tour: ${JSON.stringify(joinTourRes.data)}`);
+  }
+  const emmaTourMemberId = joinTourRes.data.member.id;
+  logSuccess(`Emma joined tour! Member ID: ${emmaTourMemberId}, Role: ${joinTourRes.data.member.role}`);
+
+  // Step C: Tour Lead promotes Emma to Tour Accountant
+  const promoteRes = await request(`/api/tours/${tourId}/members/${emmaTourMemberId}`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${tourLeadToken}` },
+    body: JSON.stringify({ role: 'ACCOUNTANT' }),
+  });
+  if (promoteRes.status !== 200 || promoteRes.data.member.role !== 'ACCOUNTANT') {
+    throw new Error(`Failed to promote member to ACCOUNTANT: ${JSON.stringify(promoteRes.data)}`);
+  }
+  logSuccess('Emma promoted to Tour Accountant!');
+
+  // Step D: Add an offline participant (Rahim, MEMBER)
+  const addOfflineRes = await request(`/api/tours/${tourId}/members`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${tourMemberToken}` }, // Accountant can add members
+    body: JSON.stringify({
+      name: 'Rahim Offline Participant',
+      phone: '+8801900000000',
+      role: 'MEMBER',
+    }),
+  });
+  if (addOfflineRes.status !== 201) {
+    throw new Error(`Failed to add offline participant: ${JSON.stringify(addOfflineRes.data)}`);
+  }
+  const rahimMemberId = addOfflineRes.data.member.id;
+  logSuccess(`Added offline participant Rahim (${rahimMemberId})`);
+
+  // Step E: Record Deposits (Lead: 10,000 tk, Emma: 8,000 tk, Rahim: 6,000 tk) -> Total Deposits: 24,000 tk
+  const dep1 = await request(`/api/tours/${tourId}/deposits`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${tourMemberToken}` }, // Accountant records deposits
+    body: JSON.stringify({
+      memberId: createTourRes.data.tour.leadMember.id,
+      amount: 10000,
+      notes: 'bKash Trx 99A...',
+    }),
+  });
+  if (dep1.status !== 201) throw new Error(`Deposit 1 failed: ${JSON.stringify(dep1.data)}`);
+
+  const dep2 = await request(`/api/tours/${tourId}/deposits`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${tourMemberToken}` },
+    body: JSON.stringify({
+      memberId: emmaTourMemberId,
+      amount: 8000,
+      notes: 'Bank transfer',
+    }),
+  });
+  if (dep2.status !== 201) throw new Error(`Deposit 2 failed: ${JSON.stringify(dep2.data)}`);
+
+  const dep3 = await request(`/api/tours/${tourId}/deposits`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${tourMemberToken}` },
+    body: JSON.stringify({
+      memberId: rahimMemberId,
+      amount: 6000,
+      notes: 'Cash in hand',
+    }),
+  });
+  if (dep3.status !== 201) throw new Error(`Deposit 3 failed: ${JSON.stringify(dep3.data)}`);
+  logSuccess('Recorded 3 deposits totaling 24,000 tk (Lead: 10k, Emma: 8k, Rahim: 6k)');
+
+  // Step F: Record Expenses (Transport: 6,000 tk, Hotel: 9,000 tk) -> Total Expenses: 15,000 tk
+  const exp1 = await request(`/api/tours/${tourId}/expenses`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${tourLeadToken}` },
+    body: JSON.stringify({
+      title: 'Scania Bus Tickets (3 seats)',
+      amount: 6000,
+      category: 'Transport',
+      memberId: createTourRes.data.tour.leadMember.id,
+    }),
+  });
+  if (exp1.status !== 201) throw new Error(`Expense 1 failed: ${JSON.stringify(exp1.data)}`);
+
+  const exp2 = await request(`/api/tours/${tourId}/expenses`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${tourMemberToken}` },
+    body: JSON.stringify({
+      title: 'Hotel Deluxe Room',
+      amount: 9000,
+      category: 'Hotel',
+    }),
+  });
+  if (exp2.status !== 201) throw new Error(`Expense 2 failed: ${JSON.stringify(exp2.data)}`);
+  logSuccess('Recorded 2 expenses totaling 15,000 tk (Transport: 6k, Hotel: 9k)');
+
+  // Step G: Fetch Tour Details & Verify Mathematical Calculations
+  const tourDetailsRes = await request(`/api/tours/${tourId}`, {
+    headers: { Authorization: `Bearer ${tourLeadToken}` },
+  });
+  if (tourDetailsRes.status !== 200) {
+    throw new Error(`Failed to fetch tour details: ${JSON.stringify(tourDetailsRes.data)}`);
+  }
+  const summary = tourDetailsRes.data.summary;
+  if (summary.totalDeposits !== 24000 || summary.totalExpenses !== 15000 || summary.balance !== 9000) {
+    throw new Error(`Unexpected tour financial summary: ${JSON.stringify(summary)}`);
+  }
+  if (summary.perMemberShare !== 5000) {
+    throw new Error(`Expected perMemberShare to be 5000, got ${summary.perMemberShare}`);
+  }
+  logSuccess(`Accurate tour financial calculations verified: Total Deposits: ৳${summary.totalDeposits}, Total Expenses: ৳${summary.totalExpenses}, Fund Balance: ৳${summary.balance}, Per-Member Share: ৳${summary.perMemberShare}`);
+
+  // Step H: Super Admin View & Delete Tour
+  const adminToursRes = await request('/api/admin', {
+    headers: { Authorization: `Bearer ${adminToken}` },
+  });
+  if (adminToursRes.status !== 200 || !adminToursRes.data.tours) {
+    throw new Error(`Admin fetch failed: ${JSON.stringify(adminToursRes.data)}`);
+  }
+  const foundInAdmin = adminToursRes.data.tours.find((t: { id: string }) => t.id === tourId);
+  if (!foundInAdmin) {
+    throw new Error('Created tour not found in Super Admin platform tour list');
+  }
+  logSuccess('Tour found in Super Admin platform telemetry');
+
+  const deleteTourRes = await request(`/api/tours/${tourId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${adminToken}` }, // Super admin deletes tour
+  });
+  if (deleteTourRes.status !== 200) {
+    throw new Error(`Failed to delete tour as Super Admin: ${JSON.stringify(deleteTourRes.data)}`);
+  }
+  logSuccess(`Super Admin successfully deleted tour (${tourId}) via /api/tours/[id]`);
+
   console.log('\n\x1b[32m=======================================================');
-  console.log('🎉 ALL EXTENDED INTEGRATION TESTS PASSED! (22/22)');
+  console.log('🎉 ALL EXTENDED INTEGRATION TESTS PASSED! (23/23)');
   console.log('=======================================================\x1b[0m\n');
 }
 

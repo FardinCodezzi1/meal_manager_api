@@ -14,7 +14,7 @@ export async function GET(req: Request) {
     }
 
     // 1. Platform KPI Statistics
-    const [totalUsers, totalMesses, allMeals, approvedBazar] = await Promise.all([
+    const [totalUsers, totalMesses, allMeals, approvedBazar, rawTours] = await Promise.all([
       prisma.user.count(),
       prisma.mess.count(),
       prisma.dailyMeal.findMany({
@@ -24,10 +24,73 @@ export async function GET(req: Request) {
         where: { status: 'APPROVED' },
         select: { amount: true },
       }),
+      prisma.tour.findMany({
+        include: {
+          members: {
+            select: {
+              id: true,
+              userId: true,
+              name: true,
+              email: true,
+              phone: true,
+              role: true,
+            },
+          },
+          expenses: {
+            select: {
+              amount: true,
+            },
+          },
+          deposits: {
+            select: {
+              amount: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
     ]);
 
     const totalMealsCount = allMeals.reduce((sum, m) => sum + m.lunch + m.dinner, 0);
     const totalBazarSum = approvedBazar.reduce((sum, b) => sum + b.amount, 0);
+
+    // Tour KPI summaries
+    const totalTours = rawTours.length;
+    const totalTourBudget = rawTours.reduce((sum, t) => sum + t.budget, 0);
+    let totalTourExpenses = 0;
+    let totalTourDeposits = 0;
+
+    const tours = rawTours.map((t) => {
+      const depositsSum = t.deposits.reduce((acc, d) => acc + d.amount, 0);
+      const expensesSum = t.expenses.reduce((acc, e) => acc + e.amount, 0);
+      const balance = depositsSum - expensesSum;
+      totalTourDeposits += depositsSum;
+      totalTourExpenses += expensesSum;
+
+      const leadMember = t.members.find((m) => m.role === 'LEAD');
+      const accountants = t.members.filter((m) => m.role === 'ACCOUNTANT');
+
+      return {
+        id: t.id,
+        name: t.name,
+        description: t.description,
+        destination: t.destination,
+        startDate: t.startDate,
+        endDate: t.endDate,
+        budget: t.budget,
+        status: t.status,
+        inviteCode: t.inviteCode,
+        creatorId: t.creatorId,
+        createdAt: t.createdAt,
+        updatedAt: t.updatedAt,
+        totalDeposits: Number(depositsSum.toFixed(2)),
+        totalExpenses: Number(expensesSum.toFixed(2)),
+        balance: Number(balance.toFixed(2)),
+        membersCount: t.members.length,
+        leadName: leadMember ? leadMember.name : 'Unknown',
+        accountantNames: accountants.map((a) => a.name),
+      };
+    });
 
     // 2. Full List of Registered Users with Active Mess and Role
     const rawUsers = await prisma.user.findMany({
@@ -113,9 +176,14 @@ export async function GET(req: Request) {
         totalMesses,
         totalMeals: Number(totalMealsCount.toFixed(1)),
         totalBazarAmount: Number(totalBazarSum.toFixed(2)),
+        totalTours,
+        totalTourBudget: Number(totalTourBudget.toFixed(2)),
+        totalTourExpenses: Number(totalTourExpenses.toFixed(2)),
+        totalTourDeposits: Number(totalTourDeposits.toFixed(2)),
       },
       users,
       messes,
+      tours,
     });
   } catch (error: unknown) {
     const err = error as Error;

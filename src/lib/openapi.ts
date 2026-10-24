@@ -736,5 +736,318 @@ export const openApiSpec = {
         },
       },
     },
+    '/api/tours': {
+      get: {
+        tags: ['Tour Expense Management'],
+        summary: 'List tours for authenticated user (or all if Super Admin with ?all=true)',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: 'all', in: 'query', required: false, schema: { type: 'boolean' } }],
+        responses: {
+          200: { description: 'List of tours with financial statistics' },
+          401: { description: 'Unauthorized' },
+        },
+      },
+      post: {
+        tags: ['Tour Expense Management'],
+        summary: 'Create a new tour (Creator becomes Tour Lead)',
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['name'],
+                properties: {
+                  name: { type: 'string', example: 'Cox’s Bazar Beach Vacation 2026' },
+                  description: { type: 'string', example: 'Annual friends weekend tour' },
+                  destination: { type: 'string', example: 'Cox’s Bazar' },
+                  startDate: { type: 'string', format: 'date', example: '2026-11-15' },
+                  endDate: { type: 'string', format: 'date', example: '2026-11-18' },
+                  budget: { type: 'number', example: 35000 },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          201: { description: 'Tour created' },
+          400: { description: 'Bad request' },
+          401: { description: 'Unauthorized' },
+        },
+      },
+    },
+    '/api/tours/join': {
+      post: {
+        tags: ['Tour Expense Management'],
+        summary: 'Join tour via invite code',
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['inviteCode'],
+                properties: {
+                  inviteCode: { type: 'string', example: 'TOUR-9XK3B' },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          201: { description: 'Successfully joined tour' },
+          400: { description: 'Already joined or invalid invite code' },
+          401: { description: 'Unauthorized' },
+        },
+      },
+    },
+    '/api/tours/{id}': {
+      get: {
+        tags: ['Tour Expense Management'],
+        summary: 'Get tour details, financial breakdown, per-member share and balances',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: {
+          200: { description: 'Tour details and financial calculation' },
+          401: { description: 'Unauthorized' },
+          403: { description: 'Access denied' },
+          404: { description: 'Tour not found' },
+        },
+      },
+      put: {
+        tags: ['Tour Expense Management'],
+        summary: 'Update tour details (Lead or Super Admin)',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        requestBody: {
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  name: { type: 'string' },
+                  description: { type: 'string' },
+                  destination: { type: 'string' },
+                  startDate: { type: 'string', format: 'date' },
+                  endDate: { type: 'string', format: 'date' },
+                  budget: { type: 'number' },
+                  status: { type: 'string', enum: ['PLANNING', 'ACTIVE', 'COMPLETED', 'CANCELLED'] },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: { description: 'Tour updated' },
+          403: { description: 'Forbidden' },
+          404: { description: 'Tour not found' },
+        },
+      },
+      delete: {
+        tags: ['Tour Expense Management'],
+        summary: 'Delete tour (Lead or Super Admin)',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: {
+          200: { description: 'Tour deleted' },
+          403: { description: 'Forbidden' },
+          404: { description: 'Tour not found' },
+        },
+      },
+    },
+    '/api/tours/{id}/members': {
+      get: {
+        tags: ['Tour Expense Management'],
+        summary: 'List tour members',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: {
+          200: { description: 'Tour members' },
+          401: { description: 'Unauthorized' },
+        },
+      },
+      post: {
+        tags: ['Tour Expense Management'],
+        summary: 'Add participant to tour (Lead, Accountant, or Super Admin)',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['name'],
+                properties: {
+                  name: { type: 'string', example: 'Rahim Khan' },
+                  email: { type: 'string', format: 'email', example: 'rahim@example.com' },
+                  phone: { type: 'string', example: '+8801800000000' },
+                  role: { type: 'string', enum: ['MEMBER', 'ACCOUNTANT'], example: 'MEMBER' },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          201: { description: 'Member added' },
+          400: { description: 'Bad request' },
+          403: { description: 'Forbidden' },
+        },
+      },
+    },
+    '/api/tours/{id}/members/{memberId}': {
+      put: {
+        tags: ['Tour Expense Management'],
+        summary: 'Update member role (e.g. promote to ACCOUNTANT or LEAD) (Lead or Super Admin)',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+          { name: 'memberId', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        requestBody: {
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  role: { type: 'string', enum: ['LEAD', 'ACCOUNTANT', 'MEMBER'] },
+                  name: { type: 'string' },
+                  phone: { type: 'string' },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: { description: 'Member role updated' },
+          403: { description: 'Forbidden' },
+        },
+      },
+      delete: {
+        tags: ['Tour Expense Management'],
+        summary: 'Remove member from tour (Lead or Super Admin)',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+          { name: 'memberId', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          200: { description: 'Member removed' },
+          403: { description: 'Forbidden' },
+        },
+      },
+    },
+    '/api/tours/{id}/deposits': {
+      get: {
+        tags: ['Tour Expense Management'],
+        summary: 'List all tour deposits',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: {
+          200: { description: 'List of deposits' },
+        },
+      },
+      post: {
+        tags: ['Tour Expense Management'],
+        summary: 'Record a deposit / payment by a member (Lead, Accountant, or Super Admin)',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['memberId', 'amount'],
+                properties: {
+                  memberId: { type: 'string', example: 'cmvm3...' },
+                  amount: { type: 'number', example: 5000 },
+                  date: { type: 'string', format: 'date', example: '2026-11-10' },
+                  notes: { type: 'string', example: 'bKash Transaction Trx99A...' },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          201: { description: 'Deposit recorded' },
+          400: { description: 'Bad request' },
+          403: { description: 'Forbidden' },
+        },
+      },
+    },
+    '/api/tours/{id}/deposits/{depositId}': {
+      delete: {
+        tags: ['Tour Expense Management'],
+        summary: 'Delete deposit (Lead, Accountant, or Super Admin)',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+          { name: 'depositId', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          200: { description: 'Deposit deleted' },
+          403: { description: 'Forbidden' },
+        },
+      },
+    },
+    '/api/tours/{id}/expenses': {
+      get: {
+        tags: ['Tour Expense Management'],
+        summary: 'List all tour expenses',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: {
+          200: { description: 'List of expenses' },
+        },
+      },
+      post: {
+        tags: ['Tour Expense Management'],
+        summary: 'Record an expense (Lead, Accountant, or Super Admin)',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['title', 'amount'],
+                properties: {
+                  title: { type: 'string', example: 'Hotel Sea Crown Deluxe Room' },
+                  amount: { type: 'number', example: 12000 },
+                  category: { type: 'string', example: 'Hotel' },
+                  memberId: { type: 'string', nullable: true, example: 'cmvm3...' },
+                  date: { type: 'string', format: 'date', example: '2026-11-15' },
+                  notes: { type: 'string', example: '2 rooms booked for 2 nights' },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          201: { description: 'Expense recorded' },
+          400: { description: 'Bad request' },
+          403: { description: 'Forbidden' },
+        },
+      },
+    },
+    '/api/tours/{id}/expenses/{expenseId}': {
+      delete: {
+        tags: ['Tour Expense Management'],
+        summary: 'Delete expense (Lead, Accountant, or Super Admin)',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+          { name: 'expenseId', in: 'path', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          200: { description: 'Expense deleted' },
+          403: { description: 'Forbidden' },
+        },
+      },
+    },
   },
 };

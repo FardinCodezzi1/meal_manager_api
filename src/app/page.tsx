@@ -30,6 +30,16 @@ import {
   LogOut,
   ExternalLink,
   ShieldCheck,
+  Compass,
+  MapPin,
+  Calendar,
+  Plus,
+  ArrowRight,
+  Wallet,
+  Receipt,
+  UserCheck,
+  UserPlus,
+  ChevronRight,
 } from 'lucide-react';
 
 interface AppConfigState {
@@ -72,16 +82,101 @@ interface MessSummary {
   createdAt: string;
 }
 
+interface TourSummary {
+  id: string;
+  name: string;
+  description: string | null;
+  destination: string | null;
+  startDate: string | null;
+  endDate: string | null;
+  budget: number;
+  status: 'PLANNING' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED';
+  inviteCode: string;
+  creatorId: string;
+  createdAt: string;
+  updatedAt: string;
+  totalDeposits: number;
+  totalExpenses: number;
+  balance: number;
+  membersCount: number;
+  leadName: string;
+  accountantNames: string[];
+  myRole?: string | null;
+}
+
+interface TourDetailedView {
+  tour: {
+    id: string;
+    name: string;
+    description: string | null;
+    destination: string | null;
+    startDate: string | null;
+    endDate: string | null;
+    budget: number;
+    status: 'PLANNING' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED';
+    inviteCode: string;
+    creatorId: string;
+    createdAt: string;
+  };
+  summary: {
+    budget: number;
+    totalDeposits: number;
+    totalExpenses: number;
+    balance: number;
+    budgetRemaining: number;
+    perMemberShare: number;
+    membersCount: number;
+    categoryBreakdown: Record<string, number>;
+  };
+  members: Array<{
+    id: string;
+    userId: string | null;
+    name: string;
+    email: string | null;
+    phone: string | null;
+    role: 'LEAD' | 'ACCOUNTANT' | 'MEMBER';
+    joinedAt: string;
+    totalDeposited: number;
+    totalSpent: number;
+    shareCost: number;
+    netBalance: number;
+  }>;
+  expenses: Array<{
+    id: string;
+    title: string;
+    amount: number;
+    category: string;
+    date: string;
+    notes: string | null;
+    spentBy: string;
+    memberId: string | null;
+  }>;
+  deposits: Array<{
+    id: string;
+    amount: number;
+    date: string;
+    notes: string | null;
+    paidBy: string;
+    memberId: string;
+  }>;
+  myRole?: string | null;
+  isSuperAdmin?: boolean;
+}
+
 interface PlatformStats {
   totalUsers: number;
   totalMesses: number;
   totalMeals: number;
   totalBazarAmount: number;
+  totalTours?: number;
+  totalTourBudget?: number;
+  totalTourExpenses?: number;
+  totalTourDeposits?: number;
 }
 
 export default function SuperAdminConsole() {
   // Navigation Tabs
-  const [activeTab, setActiveTab] = useState<'config' | 'analytics' | 'users'>('config');
+  const [activeTab, setActiveTab] = useState<'config' | 'analytics' | 'users' | 'tours'>('config');
 
   // Auth State
   const [emailInput, setEmailInput] = useState('fardin1.codezzi@gmail.com');
@@ -112,9 +207,61 @@ export default function SuperAdminConsole() {
   const [stats, setStats] = useState<PlatformStats | null>(null);
   const [usersList, setUsersList] = useState<UserSummary[]>([]);
   const [messesList, setMessesList] = useState<MessSummary[]>([]);
+  const [toursList, setToursList] = useState<TourSummary[]>([]);
   const [searchUserQuery, setSearchUserQuery] = useState('');
   const [isLoadingAdmin, setIsLoadingAdmin] = useState(false);
   const [deletingMessId, setDeletingMessId] = useState<string | null>(null);
+
+  // Tour Management State
+  const [selectedTourDetails, setSelectedTourDetails] = useState<TourDetailedView | null>(null);
+  const [isLoadingTourDetails, setIsLoadingTourDetails] = useState(false);
+  const [deletingTourId, setDeletingTourId] = useState<string | null>(null);
+  const [tourSubTab, setTourSubTab] = useState<'overview' | 'members' | 'expenses' | 'deposits'>('overview');
+
+  // Tour Modals
+  const [isCreateTourOpen, setIsCreateTourOpen] = useState(false);
+  const [createTourForm, setCreateTourForm] = useState({
+    name: '',
+    description: '',
+    destination: '',
+    startDate: '',
+    endDate: '',
+    budget: '',
+  });
+  const [isCreatingTour, setIsCreatingTour] = useState(false);
+
+  const [isJoinTourOpen, setIsJoinTourOpen] = useState(false);
+  const [joinTourCode, setJoinTourCode] = useState('');
+  const [isJoiningTour, setIsJoiningTour] = useState(false);
+
+  const [isAddExpenseOpen, setIsAddExpenseOpen] = useState(false);
+  const [addExpenseForm, setAddExpenseForm] = useState({
+    title: '',
+    amount: '',
+    category: 'Food',
+    memberId: '',
+    date: new Date().toISOString().split('T')[0],
+    notes: '',
+  });
+  const [isAddingExpense, setIsAddingExpense] = useState(false);
+
+  const [isAddDepositOpen, setIsAddDepositOpen] = useState(false);
+  const [addDepositForm, setAddDepositForm] = useState({
+    memberId: '',
+    amount: '',
+    date: new Date().toISOString().split('T')[0],
+    notes: '',
+  });
+  const [isAddingDeposit, setIsAddingDeposit] = useState(false);
+
+  const [isAddMemberOpen, setIsAddMemberOpen] = useState(false);
+  const [addMemberForm, setAddMemberForm] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    role: 'MEMBER',
+  });
+  const [isAddingMember, setIsAddingMember] = useState(false);
 
   // Edit User / Reset Password Modal State
   const [selectedUserForEdit, setSelectedUserForEdit] = useState<UserSummary | null>(null);
@@ -138,7 +285,7 @@ export default function SuperAdminConsole() {
 
   // Fetch initial config on load
   useEffect(() => {
-    async function loadPublicConfig() {
+    const fetchConfig = async () => {
       try {
         const res = await fetch('/api/config');
         if (res.ok) {
@@ -150,68 +297,88 @@ export default function SuperAdminConsole() {
               creatorName: data.config.creatorName || 'Fardin Abu Ubaid',
               creatorEmail: data.config.creatorEmail || 'fardin1.codezzi@gmail.com',
               creatorPortfolio: data.config.creatorPortfolio || 'https://portfolio-fardin.vercel.app',
-              creatorBio: data.config.creatorBio || 'Full-Stack Developer & Creator of Mess Meal Manager',
+              creatorBio: data.config.creatorBio || '',
               broadcastNotice: data.config.broadcastNotice || '',
               noticeActive: Boolean(data.config.noticeActive),
             });
           }
         }
-      } catch (err) {
-        console.error('Failed to load initial config:', err);
+      } catch {
+        // Fallback to initial values
       }
-    }
-    loadPublicConfig();
+    };
 
-    const storedToken = typeof window !== 'undefined' ? localStorage.getItem('mmm_token') : null;
-    if (storedToken) {
-      setAuthToken(storedToken);
-      fetchMe(storedToken);
+    fetchConfig();
+
+    // Check if token already exists in localStorage
+    const savedToken = localStorage.getItem('mm_admin_token');
+    const savedUser = localStorage.getItem('mm_admin_user');
+    if (savedToken && savedUser) {
+      try {
+        setAuthToken(savedToken);
+        setCurrentUser(JSON.parse(savedUser));
+      } catch {
+        // ignore parse error
+      }
     }
   }, []);
 
-  async function fetchMe(token: string) {
-    try {
-      const res = await fetch('/api/auth/me', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setCurrentUser(data.user);
-        if (data.user?.isSuperAdmin || data.user?.email.toLowerCase() === 'fardin1.codezzi@gmail.com') {
-          fetchAdminData(token);
-        }
-      } else {
-        localStorage.removeItem('mmm_token');
-        setAuthToken(null);
-        setCurrentUser(null);
-      }
-    } catch {
-      localStorage.removeItem('mmm_token');
-      setAuthToken(null);
-      setCurrentUser(null);
-    }
-  }
-
-  async function fetchAdminData(token: string) {
+  // Fetch Admin Stats & Tours whenever token is set
+  const fetchAdminData = async (token: string) => {
     setIsLoadingAdmin(true);
     try {
       const res = await fetch('/api/admin', {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
       });
+
       if (res.ok) {
         const data = await res.json();
         setStats(data.stats);
         setUsersList(data.users || []);
         setMessesList(data.messes || []);
+        if (data.tours) {
+          setToursList(data.tours);
+        }
+      } else {
+        const err = await res.json();
+        showToast(err.error || 'Failed to fetch admin stats', 'error');
       }
-    } catch (err) {
-      console.error('Failed to fetch admin statistics:', err);
+    } catch {
+      showToast('Network error while fetching platform analytics', 'error');
     } finally {
       setIsLoadingAdmin(false);
     }
-  }
+  };
 
-  async function handleLogin(e: React.FormEvent) {
+  // Fetch Tours (either via user tours or admin)
+  const fetchTours = async () => {
+    if (!authToken) return;
+    try {
+      const res = await fetch(currentUser?.isSuperAdmin ? '/api/tours?all=true' : '/api/tours', {
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+        },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setToursList(data.tours || []);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  useEffect(() => {
+    if (authToken) {
+      fetchAdminData(authToken);
+      fetchTours();
+    }
+  }, [authToken]);
+
+  // Auth Handlers
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!emailInput || !passwordInput) {
       showToast('Please enter both email and password', 'error');
@@ -227,40 +394,37 @@ export default function SuperAdminConsole() {
       });
 
       const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Authentication failed');
-      }
-
-      setAuthToken(data.token);
-      setCurrentUser(data.user);
-      localStorage.setItem('mmm_token', data.token);
-      showToast(`Welcome back, ${data.user.name}!`, 'success');
-
-      if (data.user.isSuperAdmin || data.user.email.toLowerCase() === 'fardin1.codezzi@gmail.com') {
+      if (res.ok && data.token) {
+        setAuthToken(data.token);
+        setCurrentUser(data.user);
+        localStorage.setItem('mm_admin_token', data.token);
+        localStorage.setItem('mm_admin_user', JSON.stringify(data.user));
+        showToast(`Signed in as ${data.user.name} (${data.user.isSuperAdmin ? 'Super Admin' : 'User'})`, 'success');
         fetchAdminData(data.token);
+      } else {
+        showToast(data.error || 'Authentication failed. Check credentials.', 'error');
       }
-    } catch (err: unknown) {
-      const error = err as Error;
-      showToast(error.message || 'Login error', 'error');
+    } catch {
+      showToast('Failed to connect to authentication server.', 'error');
     } finally {
       setIsLoggingIn(false);
     }
-  }
+  };
 
-  function handleLogout() {
-    localStorage.removeItem('mmm_token');
+  const handleLogout = () => {
     setAuthToken(null);
     setCurrentUser(null);
-    setStats(null);
-    setUsersList([]);
-    setMessesList([]);
-    showToast('Logged out successfully', 'info');
-  }
+    localStorage.removeItem('mm_admin_token');
+    localStorage.removeItem('mm_admin_user');
+    setSelectedTourDetails(null);
+    showToast('Signed out of admin session.', 'info');
+  };
 
-  async function handleSaveConfig(e: React.FormEvent) {
+  // Save Config Handler
+  const handleSaveConfig = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!authToken) {
-      showToast('Please sign in with admin credentials to save changes', 'error');
+      showToast('Sign in as Super Admin to save configurations', 'error');
       return;
     }
 
@@ -276,117 +440,500 @@ export default function SuperAdminConsole() {
       });
 
       const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to update configuration');
+      if (res.ok) {
+        showToast('App branding and announcement updated successfully!', 'success');
+      } else {
+        showToast(data.error || 'Failed to save configuration', 'error');
       }
-
-      showToast('App branding and broadcast notice saved successfully!', 'success');
-    } catch (err: unknown) {
-      const error = err as Error;
-      showToast(error.message || 'Error saving config', 'error');
+    } catch {
+      showToast('Error saving configuration.', 'error');
     } finally {
       setIsSavingConfig(false);
     }
-  }
+  };
 
-  async function handleDeleteMess(messId: string, messName: string) {
-    if (!confirm(`Are you sure you want to permanently delete mess "${messName}"? This will delete all member records, meals, and bazars for this mess.`)) {
+  // Delete Mess Handler
+  const handleDeleteMess = async (messId: string, messName: string) => {
+    if (!authToken) return;
+    if (!confirm(`Are you sure you want to permanently delete mess "${messName}"? This cannot be undone.`)) {
       return;
     }
 
-    if (!authToken) return;
     setDeletingMessId(messId);
-
     try {
       const res = await fetch(`/api/admin/messes/${messId}`, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${authToken}` },
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+        },
       });
 
       const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to delete mess');
+      if (res.ok) {
+        showToast(data.message || `Mess "${messName}" deleted successfully`, 'success');
+        setMessesList((prev) => prev.filter((m) => m.id !== messId));
+        if (stats) {
+          setStats({ ...stats, totalMesses: Math.max(0, stats.totalMesses - 1) });
+        }
+      } else {
+        showToast(data.error || 'Failed to delete mess', 'error');
       }
-
-      showToast(`Mess "${messName}" was deleted.`, 'info');
-      fetchAdminData(authToken);
-    } catch (err: unknown) {
-      const error = err as Error;
-      showToast(error.message || 'Deletion failed', 'error');
+    } catch {
+      showToast('Network error deleting mess.', 'error');
     } finally {
       setDeletingMessId(null);
     }
-  }
+  };
 
-  function openEditUserModal(u: UserSummary) {
-    setSelectedUserForEdit(u);
+  // User Edit & Password Reset Handlers
+  const openEditUserModal = (user: UserSummary) => {
+    setSelectedUserForEdit(user);
     setEditUserForm({
-      name: u.name,
-      email: u.email,
-      phone: u.phone || '',
+      name: user.name,
+      email: user.email,
+      phone: user.phone || '',
       newPassword: '',
-      isSuperAdmin: Boolean(u.isSuperAdmin),
+      isSuperAdmin: user.isSuperAdmin,
     });
     setShowPassword(false);
-  }
+  };
 
-  function generateRandomPassword() {
+  const closeEditUserModal = () => {
+    setSelectedUserForEdit(null);
+  };
+
+  const generateRandomPassword = () => {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%';
-    let pass = '';
-    for (let i = 0; i < 10; i++) {
-      pass += chars.charAt(Math.floor(Math.random() * chars.length));
+    let result = '';
+    for (let i = 0; i < 12; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length));
     }
-    setEditUserForm((prev) => ({ ...prev, newPassword: pass }));
+    setEditUserForm((prev) => ({ ...prev, newPassword: result }));
     setShowPassword(true);
-    showToast('Strong password generated!', 'info');
-  }
+  };
 
-  function copyCredentials() {
-    if (!editUserForm.newPassword) {
-      showToast('Enter or generate a new password first to copy credentials', 'error');
-      return;
-    }
-    const text = `Mess Meal Manager Account Credentials:\nEmail: ${editUserForm.email}\nNew Password: ${editUserForm.newPassword}`;
-    navigator.clipboard.writeText(text);
-    showToast('Credentials copied to clipboard!', 'success');
-  }
-
-  async function handleUpdateUser(e: React.FormEvent) {
+  const handleUpdateUserSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedUserForEdit || !authToken) return;
 
     setIsUpdatingUser(true);
     try {
+      const payload: Record<string, unknown> = {};
+      if (editUserForm.name !== selectedUserForEdit.name) payload.name = editUserForm.name;
+      if (editUserForm.email !== selectedUserForEdit.email) payload.email = editUserForm.email;
+      if (editUserForm.phone !== (selectedUserForEdit.phone || '')) payload.phone = editUserForm.phone;
+      if (editUserForm.isSuperAdmin !== selectedUserForEdit.isSuperAdmin) payload.isSuperAdmin = editUserForm.isSuperAdmin;
+      if (editUserForm.newPassword.trim().length > 0) payload.newPassword = editUserForm.newPassword;
+
       const res = await fetch(`/api/admin/users/${selectedUserForEdit.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${authToken}`,
         },
-        body: JSON.stringify(editUserForm),
+        body: JSON.stringify(payload),
       });
 
       const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to update user');
+      if (res.ok) {
+        showToast(`User ${editUserForm.name} updated successfully!`, 'success');
+        setUsersList((prev) =>
+          prev.map((u) =>
+            u.id === selectedUserForEdit.id
+              ? {
+                  ...u,
+                  name: editUserForm.name,
+                  email: editUserForm.email,
+                  phone: editUserForm.phone || null,
+                  isSuperAdmin: editUserForm.isSuperAdmin,
+                }
+              : u
+          )
+        );
+        closeEditUserModal();
+      } else {
+        showToast(data.error || 'Failed to update user', 'error');
       }
-
-      showToast(
-        editUserForm.newPassword
-          ? `User "${editUserForm.name}" updated & password reset successfully!`
-          : `User "${editUserForm.name}" profile updated!`,
-        'success'
-      );
-      setSelectedUserForEdit(null);
-      fetchAdminData(authToken);
-    } catch (err: unknown) {
-      const error = err as Error;
-      showToast(error.message || 'Error updating user', 'error');
+    } catch {
+      showToast('Network error while updating user account.', 'error');
     } finally {
       setIsUpdatingUser(false);
     }
-  }
+  };
 
+  // Tour Handlers
+  const fetchTourDetails = async (tourId: string) => {
+    if (!authToken) return;
+    setIsLoadingTourDetails(true);
+    try {
+      const res = await fetch(`/api/tours/${tourId}`, {
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+        },
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setSelectedTourDetails(data);
+        setTourSubTab('overview');
+      } else {
+        const err = await res.json();
+        showToast(err.error || 'Failed to fetch tour details', 'error');
+      }
+    } catch {
+      showToast('Network error while fetching tour details', 'error');
+    } finally {
+      setIsLoadingTourDetails(false);
+    }
+  };
+
+  const handleCreateTour = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!authToken) {
+      showToast('You must be signed in to create a tour', 'error');
+      return;
+    }
+
+    if (!createTourForm.name.trim()) {
+      showToast('Tour name is required', 'error');
+      return;
+    }
+
+    setIsCreatingTour(true);
+    try {
+      const res = await fetch('/api/tours', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify(createTourForm),
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        showToast(`Tour "${createTourForm.name}" created! You are the Tour Lead.`, 'success');
+        setIsCreateTourOpen(false);
+        setCreateTourForm({
+          name: '',
+          description: '',
+          destination: '',
+          startDate: '',
+          endDate: '',
+          budget: '',
+        });
+        fetchTours();
+        if (data.tour?.id) {
+          fetchTourDetails(data.tour.id);
+        }
+      } else {
+        showToast(data.error || 'Failed to create tour', 'error');
+      }
+    } catch {
+      showToast('Network error while creating tour', 'error');
+    } finally {
+      setIsCreatingTour(false);
+    }
+  };
+
+  const handleJoinTour = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!authToken) return;
+    if (!joinTourCode.trim()) {
+      showToast('Please enter a tour invite code', 'error');
+      return;
+    }
+
+    setIsJoiningTour(true);
+    try {
+      const res = await fetch('/api/tours/join', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({ inviteCode: joinTourCode.trim() }),
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        showToast(`Joined tour "${data.tour.name}" successfully!`, 'success');
+        setIsJoinTourOpen(false);
+        setJoinTourCode('');
+        fetchTours();
+        if (data.tour?.id) {
+          fetchTourDetails(data.tour.id);
+        }
+      } else {
+        showToast(data.error || 'Failed to join tour', 'error');
+      }
+    } catch {
+      showToast('Network error joining tour', 'error');
+    } finally {
+      setIsJoiningTour(false);
+    }
+  };
+
+  const handleDeleteTour = async (tourId: string, tourName: string) => {
+    if (!authToken) return;
+    if (!confirm(`Are you sure you want to permanently delete tour "${tourName}"? All expenses, deposits, and member allocations will be deleted.`)) {
+      return;
+    }
+
+    setDeletingTourId(tourId);
+    try {
+      const res = await fetch(`/api/tours/${tourId}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+        },
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        showToast(data.message || `Tour "${tourName}" deleted successfully`, 'success');
+        setToursList((prev) => prev.filter((t) => t.id !== tourId));
+        if (selectedTourDetails?.tour.id === tourId) {
+          setSelectedTourDetails(null);
+        }
+      } else {
+        showToast(data.error || 'Failed to delete tour', 'error');
+      }
+    } catch {
+      showToast('Network error deleting tour', 'error');
+    } finally {
+      setDeletingTourId(null);
+    }
+  };
+
+  const handleAddExpense = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!authToken || !selectedTourDetails) return;
+
+    if (!addExpenseForm.title.trim() || !addExpenseForm.amount) {
+      showToast('Please enter expense title and positive amount', 'error');
+      return;
+    }
+
+    setIsAddingExpense(true);
+    try {
+      const res = await fetch(`/api/tours/${selectedTourDetails.tour.id}/expenses`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({
+          title: addExpenseForm.title.trim(),
+          amount: parseFloat(addExpenseForm.amount),
+          category: addExpenseForm.category,
+          memberId: addExpenseForm.memberId || null,
+          date: addExpenseForm.date || new Date().toISOString(),
+          notes: addExpenseForm.notes || null,
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        showToast('Expense recorded successfully!', 'success');
+        setIsAddExpenseOpen(false);
+        setAddExpenseForm({
+          title: '',
+          amount: '',
+          category: 'Food',
+          memberId: '',
+          date: new Date().toISOString().split('T')[0],
+          notes: '',
+        });
+        fetchTourDetails(selectedTourDetails.tour.id);
+        fetchTours();
+      } else {
+        showToast(data.error || 'Failed to record expense', 'error');
+      }
+    } catch {
+      showToast('Network error recording expense', 'error');
+    } finally {
+      setIsAddingExpense(false);
+    }
+  };
+
+  const handleDeleteExpense = async (expenseId: string) => {
+    if (!authToken || !selectedTourDetails) return;
+    if (!confirm('Are you sure you want to remove this expense?')) return;
+
+    try {
+      const res = await fetch(`/api/tours/${selectedTourDetails.tour.id}/expenses/${expenseId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+
+      if (res.ok) {
+        showToast('Expense deleted', 'success');
+        fetchTourDetails(selectedTourDetails.tour.id);
+        fetchTours();
+      } else {
+        const err = await res.json();
+        showToast(err.error || 'Failed to delete expense', 'error');
+      }
+    } catch {
+      showToast('Network error deleting expense', 'error');
+    }
+  };
+
+  const handleAddDeposit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!authToken || !selectedTourDetails) return;
+
+    if (!addDepositForm.memberId || !addDepositForm.amount) {
+      showToast('Please select member and enter deposit amount', 'error');
+      return;
+    }
+
+    setIsAddingDeposit(true);
+    try {
+      const res = await fetch(`/api/tours/${selectedTourDetails.tour.id}/deposits`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({
+          memberId: addDepositForm.memberId,
+          amount: parseFloat(addDepositForm.amount),
+          date: addDepositForm.date || new Date().toISOString(),
+          notes: addDepositForm.notes || null,
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        showToast('Deposit recorded successfully!', 'success');
+        setIsAddDepositOpen(false);
+        setAddDepositForm({
+          memberId: '',
+          amount: '',
+          date: new Date().toISOString().split('T')[0],
+          notes: '',
+        });
+        fetchTourDetails(selectedTourDetails.tour.id);
+        fetchTours();
+      } else {
+        showToast(data.error || 'Failed to record deposit', 'error');
+      }
+    } catch {
+      showToast('Network error recording deposit', 'error');
+    } finally {
+      setIsAddingDeposit(false);
+    }
+  };
+
+  const handleDeleteDeposit = async (depositId: string) => {
+    if (!authToken || !selectedTourDetails) return;
+    if (!confirm('Are you sure you want to remove this deposit record?')) return;
+
+    try {
+      const res = await fetch(`/api/tours/${selectedTourDetails.tour.id}/deposits/${depositId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+
+      if (res.ok) {
+        showToast('Deposit record deleted', 'success');
+        fetchTourDetails(selectedTourDetails.tour.id);
+        fetchTours();
+      } else {
+        const err = await res.json();
+        showToast(err.error || 'Failed to delete deposit', 'error');
+      }
+    } catch {
+      showToast('Network error deleting deposit', 'error');
+    }
+  };
+
+  const handleAddMember = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!authToken || !selectedTourDetails) return;
+
+    if (!addMemberForm.name.trim()) {
+      showToast('Member name is required', 'error');
+      return;
+    }
+
+    setIsAddingMember(true);
+    try {
+      const res = await fetch(`/api/tours/${selectedTourDetails.tour.id}/members`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify(addMemberForm),
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        showToast(`Added ${addMemberForm.name} to tour!`, 'success');
+        setIsAddMemberOpen(false);
+        setAddMemberForm({ name: '', email: '', phone: '', role: 'MEMBER' });
+        fetchTourDetails(selectedTourDetails.tour.id);
+      } else {
+        showToast(data.error || 'Failed to add member', 'error');
+      }
+    } catch {
+      showToast('Network error adding member', 'error');
+    } finally {
+      setIsAddingMember(false);
+    }
+  };
+
+  const handleUpdateMemberRole = async (memberId: string, newRole: string) => {
+    if (!authToken || !selectedTourDetails) return;
+
+    try {
+      const res = await fetch(`/api/tours/${selectedTourDetails.tour.id}/members/${memberId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({ role: newRole }),
+      });
+
+      if (res.ok) {
+        showToast(`Role updated to ${newRole}`, 'success');
+        fetchTourDetails(selectedTourDetails.tour.id);
+      } else {
+        const err = await res.json();
+        showToast(err.error || 'Failed to update member role', 'error');
+      }
+    } catch {
+      showToast('Network error updating role', 'error');
+    }
+  };
+
+  const handleRemoveMember = async (memberId: string, memberName: string) => {
+    if (!authToken || !selectedTourDetails) return;
+    if (!confirm(`Remove ${memberName} from tour?`)) return;
+
+    try {
+      const res = await fetch(`/api/tours/${selectedTourDetails.tour.id}/members/${memberId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+
+      if (res.ok) {
+        showToast(`Member ${memberName} removed`, 'success');
+        fetchTourDetails(selectedTourDetails.tour.id);
+      } else {
+        const err = await res.json();
+        showToast(err.error || 'Failed to remove member', 'error');
+      }
+    } catch {
+      showToast('Network error removing member', 'error');
+    }
+  };
+
+  // Filtered Users
   const filteredUsers = useMemo(() => {
     if (!searchUserQuery.trim()) return usersList;
     const q = searchUserQuery.toLowerCase();
@@ -399,14 +946,39 @@ export default function SuperAdminConsole() {
     );
   }, [usersList, searchUserQuery]);
 
-  const isSuperAdminUser = currentUser?.isSuperAdmin || currentUser?.email.toLowerCase() === 'fardin1.codezzi@gmail.com';
-
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#0f172a', color: '#f8fafc', fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>
-      
-      {/* Mobile Responsive Helper CSS */}
+    <div
+      style={{
+        minHeight: '100vh',
+        backgroundColor: '#090d16',
+        color: '#f8fafc',
+        fontFamily: 'Inter, system-ui, -apple-system, sans-serif',
+        display: 'flex',
+        flexDirection: 'column',
+      }}
+    >
       <style>{`
+        /* Desktop: show table, hide mobile cards */
+        .table-desktop-view {
+          display: block;
+        }
+        .cards-mobile-view {
+          display: none;
+        }
+
+        /* Mobile Responsive Adjustments */
         @media (max-width: 768px) {
+          /* Tables switch completely to individual cards */
+          .table-desktop-view {
+            display: none !important;
+          }
+          .cards-mobile-view {
+            display: flex !important;
+            flex-direction: column;
+            gap: 12px;
+          }
+
+          /* Header & Auth Bar */
           .header-container {
             flex-direction: column !important;
             align-items: flex-start !important;
@@ -416,123 +988,182 @@ export default function SuperAdminConsole() {
           .header-actions {
             width: 100% !important;
             justify-content: flex-start !important;
+            gap: 8px !important;
           }
-          .auth-bar-container {
+          .auth-bar {
+            flex-direction: column !important;
+            align-items: flex-start !important;
             padding: 12px 16px !important;
+            gap: 10px !important;
           }
           .auth-form-flex {
             flex-direction: column !important;
             align-items: stretch !important;
             width: 100% !important;
           }
-          .auth-form-flex input, .auth-form-flex button {
+          .auth-form-flex input {
             width: 100% !important;
           }
-          .tabs-scroll {
-            padding: 0 12px !important;
-            overflow-x: auto !important;
-            -webkit-overflow-scrolling: touch !important;
-          }
-          .tab-btn-text {
-            font-size: 13px !important;
-            padding: 10px 12px !important;
-            white-space: nowrap !important;
-          }
-          .main-layout {
-            padding: 16px 12px !important;
-          }
-          .config-split-grid {
-            grid-template-columns: 1fr !important;
-            gap: 24px !important;
-          }
-          .stats-kpi-grid {
-            grid-template-columns: 1fr 1fr !important;
-            gap: 12px !important;
-          }
-          .phone-mockup-outer {
+          .auth-form-flex button {
             width: 100% !important;
-            display: flex !important;
             justify-content: center !important;
           }
-          .phone-mockup-frame {
-            width: 100% !important;
-            max-width: 310px !important;
-            height: 560px !important;
+
+          /* Tabs bar centered and wrapping */
+          .tabs-scroll {
+            justify-content: center !important;
+            padding: 8px 12px !important;
+            gap: 6px !important;
           }
-          .modal-window {
-            padding: 18px !important;
-            max-height: 92vh !important;
+          .tab-btn-text {
+            padding: 8px 10px !important;
+            font-size: 12px !important;
+          }
+
+          /* Main Content Container */
+          .main-content-pad {
+            padding: 14px !important;
+          }
+
+          /* Config Grid */
+          .config-grid {
+            grid-template-columns: 1fr !important;
+            gap: 20px !important;
+          }
+          .phone-mockup-wrapper {
+            margin: 0 auto;
+            max-width: 320px !important;
+          }
+
+          /* KPI Stats Grid */
+          .stats-grid-4col {
+            grid-template-columns: 1fr 1fr !important;
+            gap: 10px !important;
+          }
+
+          /* Modal Responsive */
+          .modal-box-responsive {
+            width: 95% !important;
+            max-width: 95% !important;
+            padding: 16px !important;
+            margin: 10px !important;
           }
           .form-2col-responsive {
             grid-template-columns: 1fr !important;
-            gap: 12px !important;
+            gap: 10px !important;
           }
+
+          /* Tour Detail Overview */
+          .tour-summary-grid {
+            grid-template-columns: 1fr 1fr !important;
+            gap: 10px !important;
+          }
+        }
+
+        @media (max-width: 480px) {
+          .stats-grid-4col {
+            grid-template-columns: 1fr !important;
+          }
+          .tour-summary-grid {
+            grid-template-columns: 1fr !important;
+          }
+        }
+
+        /* Subtle scrollbars */
+        ::-webkit-scrollbar {
+          width: 6px;
+          height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+          background: #090d16;
+        }
+        ::-webkit-scrollbar-thumb {
+          background: #334155;
+          border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+          background: #475569;
+        }
+
+        .spin {
+          animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
         }
       `}</style>
 
-      {/* Floating Toast Notification */}
+      {/* Toast Notification */}
       {toast && (
         <div
           style={{
             position: 'fixed',
-            top: '16px',
-            right: '16px',
+            top: '20px',
+            right: '20px',
             zIndex: 9999,
+            backgroundColor:
+              toast.type === 'success'
+                ? '#065f46'
+                : toast.type === 'error'
+                ? '#991b1b'
+                : '#1e3a8a',
+            color: '#fff',
             padding: '10px 16px',
             borderRadius: '6px',
-            boxShadow: '0 10px 25px rgba(0,0,0,0.5)',
+            boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.5)',
+            fontSize: '13px',
+            fontWeight: '600',
+            border: '1px solid rgba(255, 255, 255, 0.15)',
             display: 'flex',
             alignItems: 'center',
             gap: '8px',
-            fontSize: '13px',
-            fontWeight: '600',
-            backgroundColor: toast.type === 'success' ? '#059669' : toast.type === 'error' ? '#dc2626' : '#2563eb',
-            color: '#fff',
-            transition: 'all 0.3s ease',
-            maxWidth: '90vw',
           }}
         >
-          {toast.type === 'success' ? <Check size={16} /> : toast.type === 'error' ? <X size={16} /> : <Info size={16} />}
+          {toast.type === 'success' ? (
+            <Check size={16} />
+          ) : toast.type === 'error' ? (
+            <X size={16} />
+          ) : (
+            <Info size={16} />
+          )}
           <span>{toast.message}</span>
         </div>
       )}
 
-      {/* Top Header */}
+      {/* Header */}
       <header
         className="header-container"
         style={{
           borderBottom: '1px solid #1e293b',
-          backgroundColor: '#090d16',
-          padding: '14px 20px',
+          backgroundColor: '#0f172a',
+          padding: '14px 24px',
           display: 'flex',
-          flexWrap: 'wrap',
-          alignItems: 'center',
           justifyContent: 'space-between',
-          gap: '14px',
+          alignItems: 'center',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <div
             style={{
-              width: '36px',
-              height: '36px',
+              width: '38px',
+              height: '38px',
+              backgroundColor: '#f59e0b',
               borderRadius: '6px',
-              background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              boxShadow: '0 2px 8px rgba(245, 158, 11, 0.3)',
               color: '#0f172a',
             }}
           >
-            <UtensilsCrossed size={20} />
+            <UtensilsCrossed size={22} strokeWidth={2.5} />
           </div>
           <div>
-            <h1 style={{ margin: 0, fontSize: '17px', fontWeight: '700', color: '#f8fafc', letterSpacing: '-0.01em' }}>
-              Mess Meal Manager — Super Admin & CMS Console
+            <h1 style={{ fontSize: '17px', fontWeight: '800', margin: 0, letterSpacing: '-0.02em', color: '#f8fafc' }}>
+              Mess & Tour Manager <span style={{ color: '#f59e0b' }}>Admin Console</span>
             </h1>
-            <p style={{ margin: 0, fontSize: '12px', color: '#94a3b8' }}>
-              Dynamic Branding • Mobile WebView CMS • Platform Statistics
+            <p style={{ fontSize: '11px', color: '#94a3b8', margin: 0 }}>
+              Super Admin, Mess Management & Tour Expense Tracking
             </p>
           </div>
         </div>
@@ -584,57 +1215,51 @@ export default function SuperAdminConsole() {
 
       {/* Auth Bar */}
       <section
-        className="auth-bar-container"
+        className="auth-bar"
         style={{
           backgroundColor: '#111827',
           borderBottom: '1px solid #1f2937',
-          padding: '10px 20px',
+          padding: '10px 24px',
           display: 'flex',
-          flexWrap: 'wrap',
-          alignItems: 'center',
           justifyContent: 'space-between',
+          alignItems: 'center',
           gap: '12px',
+          flexWrap: 'wrap',
         }}
       >
         {currentUser ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', width: '100%', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-              {isSuperAdminUser ? (
-                <div
-                  style={{
-                    backgroundColor: 'rgba(245, 158, 11, 0.15)',
-                    border: '1px solid rgba(245, 158, 11, 0.5)',
-                    color: '#fbbf24',
-                    padding: '5px 12px',
-                    borderRadius: '6px',
-                    fontSize: '12px',
-                    fontWeight: '700',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                  }}
-                >
-                  <Crown size={15} color="#fbbf24" /> Super Admin: Fardin Abu Ubaid
-                </div>
-              ) : (
-                <div style={{ color: '#e2e8f0', fontSize: '13px', fontWeight: '600' }}>
-                  Logged in: <span style={{ color: '#38bdf8' }}>{currentUser.email}</span>
-                </div>
-              )}
-              <span style={{ color: '#64748b', fontSize: '12px' }}>({currentUser.name})</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', width: '100%' }}>
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '6px 12px',
+                backgroundColor: currentUser.isSuperAdmin ? '#78350f' : '#1e293b',
+                color: currentUser.isSuperAdmin ? '#fef3c7' : '#e2e8f0',
+                border: currentUser.isSuperAdmin ? '1px solid #d97706' : '1px solid #334155',
+                borderRadius: '6px',
+                fontSize: '12px',
+                fontWeight: '700',
+              }}
+            >
+              {currentUser.isSuperAdmin ? <Crown size={15} color="#fbbf24" /> : <ShieldCheck size={15} />}
+              <span>
+                {currentUser.isSuperAdmin ? 'Super Admin' : 'Logged In'}: {currentUser.name} ({currentUser.email})
+              </span>
             </div>
 
             <button
               onClick={handleLogout}
               style={{
-                backgroundColor: '#374151',
-                color: '#f9fafb',
-                border: 'none',
+                marginLeft: 'auto',
+                backgroundColor: '#1f2937',
+                color: '#cbd5e1',
+                border: '1px solid #374151',
                 padding: '6px 12px',
                 borderRadius: '6px',
                 fontSize: '12px',
                 cursor: 'pointer',
-                fontWeight: '600',
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: '6px',
@@ -704,95 +1329,122 @@ export default function SuperAdminConsole() {
         )}
       </section>
 
-      {/* Navigation Tabs */}
-      <div className="tabs-scroll" style={{ borderBottom: '1px solid #1e293b', padding: '0 20px', display: 'flex', gap: '4px', backgroundColor: '#0b1120' }}>
+      {/* Navigation Tabs (Centered & Mobile Responsive) */}
+      <div
+        className="tabs-scroll"
+        style={{
+          borderBottom: '1px solid #1e293b',
+          padding: '10px 16px',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '8px',
+          backgroundColor: '#0b1120',
+        }}
+      >
         <button
           onClick={() => setActiveTab('config')}
           className="tab-btn-text"
           style={{
-            padding: '12px 16px',
-            backgroundColor: 'transparent',
-            border: 'none',
-            borderBottom: activeTab === 'config' ? '2px solid #f59e0b' : '2px solid transparent',
+            padding: '8px 14px',
+            backgroundColor: activeTab === 'config' ? '#1e293b' : 'transparent',
+            border: activeTab === 'config' ? '1px solid #f59e0b' : '1px solid transparent',
             color: activeTab === 'config' ? '#fbbf24' : '#94a3b8',
+            borderRadius: '6px',
             fontWeight: activeTab === 'config' ? '700' : '500',
             fontSize: '13px',
             cursor: 'pointer',
             display: 'inline-flex',
             alignItems: 'center',
             gap: '6px',
+            transition: 'all 0.15s ease',
           }}
         >
-          <Palette size={15} /> Tab 1: App Config & Creator Branding
+          <Palette size={15} /> App Config & Branding
         </button>
-
         <button
           onClick={() => setActiveTab('analytics')}
           className="tab-btn-text"
           style={{
-            padding: '12px 16px',
-            backgroundColor: 'transparent',
-            border: 'none',
-            borderBottom: activeTab === 'analytics' ? '2px solid #38bdf8' : '2px solid transparent',
-            color: activeTab === 'analytics' ? '#38bdf8' : '#94a3b8',
+            padding: '8px 14px',
+            backgroundColor: activeTab === 'analytics' ? '#1e293b' : 'transparent',
+            border: activeTab === 'analytics' ? '1px solid #f59e0b' : '1px solid transparent',
+            color: activeTab === 'analytics' ? '#fbbf24' : '#94a3b8',
+            borderRadius: '6px',
             fontWeight: activeTab === 'analytics' ? '700' : '500',
             fontSize: '13px',
             cursor: 'pointer',
             display: 'inline-flex',
             alignItems: 'center',
             gap: '6px',
+            transition: 'all 0.15s ease',
           }}
         >
-          <BarChart3 size={15} /> Tab 2: Platform Analytics & Messes
+          <BarChart3 size={15} /> Messes & Analytics
         </button>
-
         <button
           onClick={() => setActiveTab('users')}
           className="tab-btn-text"
           style={{
-            padding: '12px 16px',
-            backgroundColor: 'transparent',
-            border: 'none',
-            borderBottom: activeTab === 'users' ? '2px solid #10b981' : '2px solid transparent',
-            color: activeTab === 'users' ? '#34d399' : '#94a3b8',
+            padding: '8px 14px',
+            backgroundColor: activeTab === 'users' ? '#1e293b' : 'transparent',
+            border: activeTab === 'users' ? '1px solid #f59e0b' : '1px solid transparent',
+            color: activeTab === 'users' ? '#fbbf24' : '#94a3b8',
+            borderRadius: '6px',
             fontWeight: activeTab === 'users' ? '700' : '500',
             fontSize: '13px',
             cursor: 'pointer',
             display: 'inline-flex',
             alignItems: 'center',
             gap: '6px',
+            transition: 'all 0.15s ease',
           }}
         >
-          <Users size={15} /> Tab 3: User Directory
+          <Users size={15} /> User Directory
+        </button>
+        <button
+          onClick={() => setActiveTab('tours')}
+          className="tab-btn-text"
+          style={{
+            padding: '8px 14px',
+            backgroundColor: activeTab === 'tours' ? '#1e293b' : 'transparent',
+            border: activeTab === 'tours' ? '1px solid #f59e0b' : '1px solid transparent',
+            color: activeTab === 'tours' ? '#fbbf24' : '#94a3b8',
+            borderRadius: '6px',
+            fontWeight: activeTab === 'tours' ? '700' : '500',
+            fontSize: '13px',
+            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            transition: 'all 0.15s ease',
+          }}
+        >
+          <Compass size={15} /> Tour Expense Manager
         </button>
       </div>
 
       {/* Main Content Area */}
-      <main className="main-layout" style={{ maxWidth: '1400px', margin: '0 auto', padding: '24px' }}>
-
-        {/* TAB 1: App Config & Live Phone Mockup */}
+      <main className="main-content-pad" style={{ flex: 1, padding: '24px', maxWidth: '1280px', margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
+        
+        {/* ================= TAB 1: App Config & Branding ================= */}
         {activeTab === 'config' && (
-          <div className="config-split-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(320px, 1.2fr) minmax(300px, 0.8fr)', gap: '28px', alignItems: 'start' }}>
-            
+          <div className="config-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.4fr) minmax(0, 1fr)', gap: '28px', alignItems: 'start' }}>
             {/* Form Column */}
             <div style={{ backgroundColor: '#1e293b', borderRadius: '8px', padding: '20px', border: '1px solid #334155' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
-                <div>
-                  <h2 style={{ margin: 0, fontSize: '17px', fontWeight: '700', color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Palette size={18} color="#f59e0b" /> Branding & Announcement CMS
-                  </h2>
-                  <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#94a3b8' }}>
-                    Modifications synchronize instantly with Android WebViews and Web clients.
-                  </p>
-                </div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+                <h2 style={{ fontSize: '15px', fontWeight: '700', margin: 0, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Palette size={17} color="#fbbf24" /> CMS & Branding Configuration
+                </h2>
                 <div style={{ padding: '3px 8px', backgroundColor: '#0f172a', borderRadius: '4px', fontSize: '11px', color: '#fbbf24', border: '1px solid rgba(245, 158, 11, 0.4)' }}>
-                  Singleton Config
+                  Singleton ID: global-config
                 </div>
               </div>
 
               <form onSubmit={handleSaveConfig} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#cbd5e1', marginBottom: '5px' }}>
+                  <label style={{ display: 'block', fontSize: '12px', color: '#94a3b8', marginBottom: '4px', fontWeight: '500' }}>
                     App Header Title
                   </label>
                   <input
@@ -801,22 +1453,21 @@ export default function SuperAdminConsole() {
                     onChange={(e) => setConfig({ ...config, appName: e.target.value })}
                     style={{
                       width: '100%',
-                      padding: '9px 12px',
+                      padding: '8px 12px',
                       backgroundColor: '#0f172a',
                       border: '1px solid #334155',
                       borderRadius: '6px',
-                      color: '#f8fafc',
+                      color: '#fff',
                       fontSize: '13px',
                       boxSizing: 'border-box',
                     }}
-                    required
                   />
                 </div>
 
-                <div className="form-2col-responsive" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                   <div>
-                    <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#cbd5e1', marginBottom: '5px' }}>
-                      Creator Name
+                    <label style={{ display: 'block', fontSize: '12px', color: '#94a3b8', marginBottom: '4px', fontWeight: '500' }}>
+                      Creator Full Name
                     </label>
                     <input
                       type="text"
@@ -824,20 +1475,18 @@ export default function SuperAdminConsole() {
                       onChange={(e) => setConfig({ ...config, creatorName: e.target.value })}
                       style={{
                         width: '100%',
-                        padding: '9px 12px',
+                        padding: '8px 12px',
                         backgroundColor: '#0f172a',
                         border: '1px solid #334155',
                         borderRadius: '6px',
-                        color: '#f8fafc',
+                        color: '#fff',
                         fontSize: '13px',
                         boxSizing: 'border-box',
                       }}
-                      required
                     />
                   </div>
-
                   <div>
-                    <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#cbd5e1', marginBottom: '5px' }}>
+                    <label style={{ display: 'block', fontSize: '12px', color: '#94a3b8', marginBottom: '4px', fontWeight: '500' }}>
                       Creator Email
                     </label>
                     <input
@@ -846,21 +1495,20 @@ export default function SuperAdminConsole() {
                       onChange={(e) => setConfig({ ...config, creatorEmail: e.target.value })}
                       style={{
                         width: '100%',
-                        padding: '9px 12px',
+                        padding: '8px 12px',
                         backgroundColor: '#0f172a',
                         border: '1px solid #334155',
                         borderRadius: '6px',
-                        color: '#f8fafc',
+                        color: '#fff',
                         fontSize: '13px',
                         boxSizing: 'border-box',
                       }}
-                      required
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#cbd5e1', marginBottom: '5px' }}>
+                  <label style={{ display: 'block', fontSize: '12px', color: '#94a3b8', marginBottom: '4px', fontWeight: '500' }}>
                     Creator Portfolio URL
                   </label>
                   <input
@@ -869,21 +1517,20 @@ export default function SuperAdminConsole() {
                     onChange={(e) => setConfig({ ...config, creatorPortfolio: e.target.value })}
                     style={{
                       width: '100%',
-                      padding: '9px 12px',
+                      padding: '8px 12px',
                       backgroundColor: '#0f172a',
                       border: '1px solid #334155',
                       borderRadius: '6px',
-                      color: '#f8fafc',
+                      color: '#fff',
                       fontSize: '13px',
                       boxSizing: 'border-box',
                     }}
-                    required
                   />
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#cbd5e1', marginBottom: '5px' }}>
-                    Creator Bio
+                  <label style={{ display: 'block', fontSize: '12px', color: '#94a3b8', marginBottom: '4px', fontWeight: '500' }}>
+                    Creator Bio / Subtitle
                   </label>
                   <textarea
                     rows={2}
@@ -891,33 +1538,24 @@ export default function SuperAdminConsole() {
                     onChange={(e) => setConfig({ ...config, creatorBio: e.target.value })}
                     style={{
                       width: '100%',
-                      padding: '9px 12px',
+                      padding: '8px 12px',
                       backgroundColor: '#0f172a',
                       border: '1px solid #334155',
                       borderRadius: '6px',
-                      color: '#f8fafc',
+                      color: '#fff',
                       fontSize: '13px',
                       boxSizing: 'border-box',
-                      fontFamily: 'inherit',
+                      resize: 'vertical',
                     }}
                   />
                 </div>
 
                 <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '5px' }}>
-                    <label style={{ fontSize: '12px', fontWeight: '600', color: '#cbd5e1' }}>
-                      Custom App Icon SVG (optional)
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => setConfig({ ...config, appIconSvg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#f59e0b" width="26" height="26"><path d="M11 9H9V2H7v7H5V2H3v7c0 2.12 1.66 3.84 3.75 3.97V22h2.5v-9.03C11.34 12.84 13 11.12 13 9V2h-2v7zm5-3v8h2.5v8H21V2c-2.76 0-5 2.24-5 4z"/></svg>' })}
-                      style={{ background: 'none', border: 'none', color: '#38bdf8', fontSize: '11px', cursor: 'pointer', textDecoration: 'underline' }}
-                    >
-                      Insert Fork/Knife SVG
-                    </button>
-                  </div>
+                  <label style={{ display: 'block', fontSize: '12px', color: '#94a3b8', marginBottom: '4px', fontWeight: '500' }}>
+                    Custom App Icon SVG (Optional)
+                  </label>
                   <textarea
-                    rows={2}
+                    rows={3}
                     placeholder="<svg ...>...</svg>"
                     value={config.appIconSvg}
                     onChange={(e) => setConfig({ ...config, appIconSvg: e.target.value })}
@@ -927,34 +1565,32 @@ export default function SuperAdminConsole() {
                       backgroundColor: '#0f172a',
                       border: '1px solid #334155',
                       borderRadius: '6px',
-                      color: '#38bdf8',
-                      fontSize: '11px',
+                      color: '#fff',
+                      fontSize: '12px',
                       fontFamily: 'monospace',
                       boxSizing: 'border-box',
+                      resize: 'vertical',
                     }}
                   />
                 </div>
 
-                {/* Announcement Banner */}
                 <div style={{ backgroundColor: '#090d16', padding: '14px', borderRadius: '6px', border: '1px solid #1e293b' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                    <span style={{ fontSize: '12px', fontWeight: '700', color: '#fbbf24', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
-                      <Megaphone size={14} /> Announcement Banner
-                    </span>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '12px', color: '#cbd5e1' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                    <label style={{ fontSize: '12px', color: '#f8fafc', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Megaphone size={14} color="#f59e0b" /> Broadcast Notice Banner
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#cbd5e1', cursor: 'pointer' }}>
                       <input
                         type="checkbox"
                         checked={config.noticeActive}
                         onChange={(e) => setConfig({ ...config, noticeActive: e.target.checked })}
-                        style={{ width: '15px', height: '15px', cursor: 'pointer' }}
                       />
                       Notice Active
                     </label>
                   </div>
-
-                  <input
-                    type="text"
-                    placeholder="Broadcast text shown across mobile apps..."
+                  <textarea
+                    rows={2}
+                    placeholder="Enter broadcast message shown to all app users..."
                     value={config.broadcastNotice}
                     onChange={(e) => setConfig({ ...config, broadcastNotice: e.target.value })}
                     style={{
@@ -963,8 +1599,8 @@ export default function SuperAdminConsole() {
                       backgroundColor: '#0f172a',
                       border: '1px solid #334155',
                       borderRadius: '6px',
-                      color: '#f8fafc',
-                      fontSize: '12px',
+                      color: '#fff',
+                      fontSize: '13px',
                       boxSizing: 'border-box',
                     }}
                   />
@@ -977,306 +1613,252 @@ export default function SuperAdminConsole() {
                     backgroundColor: '#f59e0b',
                     color: '#0f172a',
                     border: 'none',
-                    padding: '12px',
+                    padding: '10px 18px',
                     borderRadius: '6px',
-                    fontSize: '14px',
                     fontWeight: '700',
+                    fontSize: '13px',
                     cursor: 'pointer',
-                    boxShadow: '0 2px 8px rgba(245, 158, 11, 0.3)',
-                    display: 'inline-flex',
+                    display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    gap: '6px',
+                    gap: '8px',
+                    marginTop: '8px',
                   }}
                 >
-                  <Save size={16} /> {isSavingConfig ? 'Saving...' : 'Save Changes (PUT /api/config)'}
+                  <Save size={16} /> {isSavingConfig ? 'Saving Changes...' : 'Save Configuration'}
                 </button>
               </form>
             </div>
 
-            {/* Live Phone Mockup Column */}
-            <div className="phone-mockup-outer" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-              <div style={{ marginBottom: '10px', fontSize: '12px', color: '#94a3b8', fontWeight: '600', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                <Smartphone size={14} /> Real-Time Android WebView / Mobile Preview
+            {/* Live Phone Mockup */}
+            <div className="phone-mockup-wrapper">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px', color: '#94a3b8', fontSize: '12px', fontWeight: '600' }}>
+                <Smartphone size={14} /> Live Mobile View Preview
               </div>
-
-              {/* Phone Shell */}
               <div
-                className="phone-mockup-frame"
                 style={{
-                  width: '310px',
-                  height: '600px',
-                  backgroundColor: '#000',
+                  backgroundColor: '#030712',
+                  border: '8px solid #1f2937',
                   borderRadius: '8px',
-                  border: '6px solid #334155',
-                  boxShadow: '0 20px 45px rgba(0,0,0,0.7)',
-                  position: 'relative',
-                  overflow: 'hidden',
+                  boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7)',
+                  padding: '16px 12px',
                   display: 'flex',
                   flexDirection: 'column',
+                  gap: '12px',
+                  minHeight: '440px',
+                  boxSizing: 'border-box',
                 }}
               >
-                {/* Phone Notch */}
-                <div
-                  style={{
-                    position: 'absolute',
-                    top: '0',
-                    left: '50%',
-                    transform: 'translateX(-50%)',
-                    width: '100px',
-                    height: '18px',
-                    backgroundColor: '#1e293b',
-                    borderBottomLeftRadius: '6px',
-                    borderBottomRightRadius: '6px',
-                    zIndex: 50,
-                  }}
-                />
-
-                {/* Status Bar */}
-                <div
-                  style={{
-                    height: '32px',
-                    padding: '0 16px',
-                    display: 'flex',
-                    alignItems: 'flex-end',
-                    justifyContent: 'space-between',
-                    fontSize: '10px',
-                    color: '#94a3b8',
-                    fontWeight: '600',
-                    paddingBottom: '4px',
-                    backgroundColor: '#090d16',
-                  }}
-                >
-                  <span>9:41</span>
-                  <span>5G 100%</span>
-                </div>
+                {/* Phone Speaker Notch */}
+                <div style={{ width: '40px', height: '4px', backgroundColor: '#374151', borderRadius: '2px', margin: '0 auto 4px auto' }} />
 
                 {/* Mobile App Header */}
-                <div
-                  style={{
-                    backgroundColor: '#0f172a',
-                    borderBottom: '1px solid #1e293b',
-                    padding: '12px 14px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '10px',
-                  }}
-                >
-                  {config.appIconSvg ? (
-                    <div
-                      style={{ width: '26px', height: '26px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                      dangerouslySetInnerHTML={{ __html: config.appIconSvg }}
-                    />
-                  ) : (
-                    <div style={{ color: '#f59e0b' }}>
-                      <UtensilsCrossed size={22} />
-                    </div>
-                  )}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: '14px', fontWeight: '700', color: '#f8fafc', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #1f2937', paddingBottom: '10px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {config.appIconSvg ? (
+                      <div
+                        style={{ width: '24px', height: '24px' }}
+                        dangerouslySetInnerHTML={{ __html: config.appIconSvg }}
+                      />
+                    ) : (
+                      <div style={{ width: '24px', height: '24px', backgroundColor: '#f59e0b', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#000' }}>
+                        <UtensilsCrossed size={14} />
+                      </div>
+                    )}
+                    <span style={{ fontSize: '14px', fontWeight: '700', color: '#f9fafb' }}>
                       {config.appName || 'Mess Meal Manager'}
-                    </div>
+                    </span>
                   </div>
                   <div style={{ width: '8px', height: '8px', borderRadius: '4px', backgroundColor: '#10b981' }} />
                 </div>
 
-                {/* Mobile Broadcast Notice Banner */}
+                {/* Broadcast Banner */}
                 {config.noticeActive && config.broadcastNotice && (
                   <div
                     style={{
-                      backgroundColor: '#d97706',
-                      color: '#ffffff',
-                      padding: '7px 10px',
-                      fontSize: '11px',
-                      fontWeight: '600',
+                      backgroundColor: '#78350f',
+                      border: '1px solid #d97706',
+                      borderRadius: '4px',
+                      padding: '8px 10px',
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '5px',
-                      borderBottom: '1px solid #b45309',
+                      gap: '8px',
                     }}
                   >
-                    <Zap size={13} />
-                    <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    <Zap size={14} color="#fde68a" />
+                    <span style={{ fontSize: '11px', color: '#fef3c7', lineHeight: '1.3' }}>
                       {config.broadcastNotice}
                     </span>
                   </div>
                 )}
 
-                {/* Phone Inner Body */}
-                <div style={{ flex: 1, padding: '14px', backgroundColor: '#020617', overflowY: 'auto' }}>
-                  
-                  {/* Mockup Meal Card */}
+                {/* Simulated Content */}
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                   <div style={{ backgroundColor: '#0f172a', borderRadius: '6px', padding: '12px', border: '1px solid #1e293b', marginBottom: '12px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                      <span style={{ fontSize: '10px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: '700' }}>Today's Meals</span>
-                      <span style={{ fontSize: '10px', color: '#38bdf8', fontWeight: '600' }}>Active Month</span>
+                    <div style={{ fontSize: '12px', fontWeight: '700', color: '#38bdf8', marginBottom: '4px' }}>
+                      Today&apos;s Meals
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-around', textAlign: 'center' }}>
-                      <div>
-                        <div style={{ fontSize: '16px', fontWeight: '700', color: '#f8fafc' }}>1.0</div>
-                        <div style={{ fontSize: '10px', color: '#64748b' }}>Lunch</div>
-                      </div>
-                      <div style={{ borderLeft: '1px solid #1e293b' }} />
-                      <div>
-                        <div style={{ fontSize: '16px', fontWeight: '700', color: '#f8fafc' }}>1.0</div>
-                        <div style={{ fontSize: '10px', color: '#64748b' }}>Dinner</div>
-                      </div>
-                      <div style={{ borderLeft: '1px solid #1e293b' }} />
-                      <div>
-                        <div style={{ fontSize: '16px', fontWeight: '700', color: '#10b981' }}>৳65</div>
-                        <div style={{ fontSize: '10px', color: '#64748b' }}>Rate</div>
-                      </div>
-                    </div>
+                    <div style={{ fontSize: '11px', color: '#94a3b8' }}>Lunch: 1.0 | Dinner: 1.0</div>
                   </div>
 
-                  {/* Creator Profile Card */}
+                  {/* Creator Profile Card in Mobile */}
                   <div
                     style={{
-                      background: 'linear-gradient(145deg, #1e293b 0%, #0f172a 100%)',
+                      backgroundColor: '#1e293b',
                       borderRadius: '6px',
-                      padding: '14px',
-                      border: '1px solid rgba(245, 158, 11, 0.3)',
+                      padding: '12px',
+                      border: '1px solid #334155',
+                      textAlign: 'center',
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                      <div
+                    <div style={{ fontSize: '10px', color: '#fbbf24', textTransform: 'uppercase', fontWeight: '700', letterSpacing: '0.05em' }}>
+                      Designed & Developed by
+                    </div>
+                    <div style={{ fontSize: '13px', fontWeight: '700', color: '#fff', marginTop: '2px' }}>
+                      {config.creatorName}
+                    </div>
+                    <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '2px' }}>
+                      {config.creatorBio}
+                    </div>
+                    {config.creatorPortfolio && (
+                      <a
+                        href={config.creatorPortfolio}
+                        target="_blank"
+                        rel="noreferrer"
                         style={{
-                          width: '36px',
-                          height: '36px',
-                          borderRadius: '6px',
-                          background: 'linear-gradient(135deg, #f59e0b, #ef4444)',
-                          display: 'flex',
+                          display: 'inline-flex',
                           alignItems: 'center',
-                          justifyContent: 'center',
-                          fontSize: '16px',
-                          fontWeight: '800',
-                          color: '#fff',
+                          gap: '4px',
+                          marginTop: '8px',
+                          fontSize: '11px',
+                          color: '#38bdf8',
+                          textDecoration: 'none',
+                          backgroundColor: '#0f172a',
+                          padding: '4px 8px',
+                          borderRadius: '4px',
+                          border: '1px solid #334155',
                         }}
                       >
-                        {config.creatorName ? config.creatorName.charAt(0) : 'F'}
-                      </div>
-                      <div>
-                        <div style={{ fontSize: '12px', fontWeight: '700', color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          {config.creatorName} <Check size={12} color="#38bdf8" />
-                        </div>
-                        <div style={{ fontSize: '10px', color: '#94a3b8' }}>
-                          {config.creatorEmail}
-                        </div>
-                      </div>
-                    </div>
-
-                    <p style={{ margin: '0 0 10px 0', fontSize: '11px', color: '#cbd5e1', lineHeight: '1.4' }}>
-                      {config.creatorBio}
-                    </p>
-
-                    <a
-                      href={config.creatorPortfolio}
-                      target="_blank"
-                      rel="noreferrer"
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '4px',
-                        backgroundColor: '#f59e0b',
-                        color: '#0f172a',
-                        padding: '6px',
-                        borderRadius: '4px',
-                        fontSize: '11px',
-                        fontWeight: '700',
-                        textDecoration: 'none',
-                      }}
-                    >
-                      Visit Creator Portfolio <ExternalLink size={12} />
-                    </a>
+                        Portfolio <ExternalLink size={10} />
+                      </a>
+                    )}
                   </div>
-
                 </div>
 
-                {/* Bottom Indicator */}
-                <div style={{ height: '16px', backgroundColor: '#020617', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                  <div style={{ width: '70px', height: '3px', backgroundColor: '#475569', borderRadius: '2px' }} />
-                </div>
+                {/* Phone Bottom Home Bar */}
+                <div style={{ width: '70px', height: '3px', backgroundColor: '#475569', borderRadius: '2px', margin: '4px auto 0 auto' }} />
               </div>
             </div>
-
           </div>
         )}
 
-        {/* TAB 2: Platform Analytics & Mess Management */}
+        {/* ================= TAB 2: Platform Analytics & Messes ================= */}
         {activeTab === 'analytics' && (
           <div>
-            {!isSuperAdminUser ? (
+            {!currentUser?.isSuperAdmin ? (
               <div style={{ backgroundColor: '#1e293b', padding: '28px', borderRadius: '8px', textAlign: 'center', border: '1px solid #334155' }}>
-                <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '10px', color: '#f59e0b' }}>
-                  <Lock size={36} />
-                </div>
-                <h3 style={{ margin: '0 0 6px 0', color: '#f8fafc', fontSize: '16px' }}>Super Admin Authorization Required</h3>
-                <p style={{ margin: '0 0 16px 0', color: '#94a3b8', fontSize: '13px' }}>
-                  Please sign in with <code style={{ color: '#fbbf24' }}>fardin1.codezzi@gmail.com</code> above to view platform analytics and manage messes.
+                <Crown size={32} color="#f59e0b" style={{ margin: '0 auto 12px auto' }} />
+                <h3 style={{ fontSize: '16px', fontWeight: '700', margin: '0 0 6px 0', color: '#f8fafc' }}>
+                  Super Admin Authentication Required
+                </h3>
+                <p style={{ fontSize: '13px', color: '#94a3b8', margin: '0 0 16px 0' }}>
+                  Sign in above with credentials for <code>fardin1.codezzi@gmail.com</code> to view platform telemetry and manage messes.
                 </p>
               </div>
             ) : (
-              <div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                 {/* 4 KPI Cards */}
-                <div className="stats-kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '24px' }}>
-                  
+                <div className="stats-grid-4col" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '14px' }}>
                   <div style={{ backgroundColor: '#1e293b', borderRadius: '8px', padding: '16px', border: '1px solid #334155' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#94a3b8', fontWeight: '700', marginBottom: '4px' }}>
-                      <Users size={14} color="#38bdf8" /> TOTAL USERS
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: '#94a3b8', fontSize: '12px', fontWeight: '600' }}>
+                      <span>Total Users</span>
+                      <Users size={18} color="#38bdf8" />
                     </div>
-                    <div style={{ fontSize: '26px', fontWeight: '800', color: '#38bdf8' }}>
-                      {stats ? stats.totalUsers : '...'}
+                    <div style={{ fontSize: '24px', fontWeight: '800', color: '#f8fafc', marginTop: '6px' }}>
+                      {stats ? stats.totalUsers : '—'}
                     </div>
-                    <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>Registered database profiles</div>
                   </div>
 
                   <div style={{ backgroundColor: '#1e293b', borderRadius: '8px', padding: '16px', border: '1px solid #334155' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#94a3b8', fontWeight: '700', marginBottom: '4px' }}>
-                      <Home size={14} color="#f59e0b" /> TOTAL MESSES
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: '#94a3b8', fontSize: '12px', fontWeight: '600' }}>
+                      <span>Total Messes</span>
+                      <Home size={18} color="#10b981" />
                     </div>
-                    <div style={{ fontSize: '26px', fontWeight: '800', color: '#f59e0b' }}>
-                      {stats ? stats.totalMesses : '...'}
+                    <div style={{ fontSize: '24px', fontWeight: '800', color: '#f8fafc', marginTop: '6px' }}>
+                      {stats ? stats.totalMesses : '—'}
                     </div>
-                    <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>Managed room groups</div>
                   </div>
 
                   <div style={{ backgroundColor: '#1e293b', borderRadius: '8px', padding: '16px', border: '1px solid #334155' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#94a3b8', fontWeight: '700', marginBottom: '4px' }}>
-                      <UtensilsCrossed size={14} color="#10b981" /> TOTAL MEALS
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: '#94a3b8', fontSize: '12px', fontWeight: '600' }}>
+                      <span>Total Meals</span>
+                      <UtensilsCrossed size={18} color="#f59e0b" />
                     </div>
-                    <div style={{ fontSize: '26px', fontWeight: '800', color: '#10b981' }}>
-                      {stats ? stats.totalMeals : '...'}
+                    <div style={{ fontSize: '24px', fontWeight: '800', color: '#f8fafc', marginTop: '6px' }}>
+                      {stats ? stats.totalMeals : '—'}
                     </div>
-                    <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>Recorded lunch & dinner count</div>
                   </div>
 
                   <div style={{ backgroundColor: '#1e293b', borderRadius: '8px', padding: '16px', border: '1px solid #334155' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#94a3b8', fontWeight: '700', marginBottom: '4px' }}>
-                      <Coins size={14} color="#ec4899" /> APPROVED BAZAR
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: '#94a3b8', fontSize: '12px', fontWeight: '600' }}>
+                      <span>Total Bazar (৳)</span>
+                      <Coins size={18} color="#ec4899" />
                     </div>
-                    <div style={{ fontSize: '26px', fontWeight: '800', color: '#ec4899' }}>
-                      ৳{stats ? stats.totalBazarAmount.toLocaleString() : '...'}
+                    <div style={{ fontSize: '24px', fontWeight: '800', color: '#f8fafc', marginTop: '6px' }}>
+                      ৳{stats ? stats.totalBazarAmount.toLocaleString() : '—'}
                     </div>
-                    <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>Approved grocery expenditures</div>
                   </div>
-
                 </div>
 
-                {/* Mess Management Table */}
+                {/* Tour KPI Summary if available */}
+                {stats && stats.totalTours !== undefined && (
+                  <div style={{ backgroundColor: '#0f172a', borderRadius: '8px', padding: '14px 18px', border: '1px solid #334155', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <Compass size={20} color="#38bdf8" />
+                      <div>
+                        <div style={{ fontSize: '13px', fontWeight: '700', color: '#f8fafc' }}>
+                          Tours Telemetry Overview
+                        </div>
+                        <div style={{ fontSize: '11px', color: '#94a3b8' }}>
+                          {stats.totalTours} Active Tours | Budget: ৳{stats.totalTourBudget?.toLocaleString()} | Expenses: ৳{stats.totalTourExpenses?.toLocaleString()} | Deposits: ৳{stats.totalTourDeposits?.toLocaleString()}
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setActiveTab('tours')}
+                      style={{
+                        backgroundColor: '#2563eb',
+                        color: '#fff',
+                        border: 'none',
+                        padding: '6px 12px',
+                        borderRadius: '6px',
+                        fontSize: '12px',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                      }}
+                    >
+                      Manage Tours <ArrowRight size={13} />
+                    </button>
+                  </div>
+                )}
+
+                {/* Messes List */}
                 <div style={{ backgroundColor: '#1e293b', borderRadius: '8px', padding: '20px', border: '1px solid #334155' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
-                    <h3 style={{ margin: 0, fontSize: '16px', color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <Home size={16} color="#f59e0b" /> Messes Management ({messesList.length})
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
+                    <h3 style={{ fontSize: '15px', fontWeight: '700', margin: 0, color: '#f8fafc' }}>
+                      Platform Messes Directory ({messesList.length})
                     </h3>
                     {authToken && (
                       <button
                         onClick={() => fetchAdminData(authToken)}
                         disabled={isLoadingAdmin}
                         style={{
-                          background: '#334155',
-                          border: 'none',
-                          color: '#cbd5e1',
+                          backgroundColor: '#0f172a',
+                          color: '#38bdf8',
+                          border: '1px solid #334155',
                           padding: '5px 10px',
                           borderRadius: '4px',
                           fontSize: '11px',
@@ -1291,7 +1873,8 @@ export default function SuperAdminConsole() {
                     )}
                   </div>
 
-                  <div style={{ overflowX: 'auto' }}>
+                  {/* Desktop Table View */}
+                  <div className="table-desktop-view" style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
                       <thead>
                         <tr style={{ borderBottom: '2px solid #334155', color: '#94a3b8', fontSize: '11px', textTransform: 'uppercase' }}>
@@ -1358,60 +1941,128 @@ export default function SuperAdminConsole() {
                       </tbody>
                     </table>
                   </div>
+
+                  {/* Mobile Individual Cards View */}
+                  <div className="cards-mobile-view">
+                    {messesList.length === 0 ? (
+                      <div style={{ padding: '20px', textAlign: 'center', color: '#64748b' }}>
+                        No messes created yet.
+                      </div>
+                    ) : (
+                      messesList.map((m) => (
+                        <div
+                          key={m.id}
+                          style={{
+                            backgroundColor: '#0f172a',
+                            border: '1px solid #334155',
+                            borderRadius: '6px',
+                            padding: '14px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '8px',
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                            <div style={{ fontWeight: '700', fontSize: '14px', color: '#f8fafc' }}>{m.name}</div>
+                            <span style={{ backgroundColor: '#064e3b', color: '#6ee7b7', padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: '600' }}>
+                              {m.activeMembersCount} active
+                            </span>
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontSize: '11px', color: '#94a3b8' }}>Invite Code:</span>
+                            <span style={{ backgroundColor: '#1e293b', border: '1px solid #475569', padding: '2px 6px', borderRadius: '4px', fontFamily: 'monospace', color: '#38bdf8', fontSize: '12px' }}>
+                              {m.inviteCode}
+                            </span>
+                          </div>
+
+                          <div style={{ fontSize: '12px', color: '#cbd5e1' }}>
+                            <span style={{ color: '#94a3b8' }}>Manager:</span> {m.managerName} ({m.managerEmail})
+                          </div>
+
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px', paddingTop: '8px', borderTop: '1px solid #1e293b' }}>
+                            <span style={{ fontSize: '11px', color: '#64748b' }}>
+                              Created: {new Date(m.createdAt).toLocaleDateString()}
+                            </span>
+                            <button
+                              onClick={() => handleDeleteMess(m.id, m.name)}
+                              disabled={deletingMessId === m.id}
+                              style={{
+                                backgroundColor: '#7f1d1d',
+                                color: '#fca5a5',
+                                border: '1px solid #b91c1c',
+                                padding: '5px 10px',
+                                borderRadius: '4px',
+                                fontSize: '11px',
+                                fontWeight: '600',
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                              }}
+                            >
+                              <Trash2 size={12} /> {deletingMessId === m.id ? 'Deleting...' : 'Delete'}
+                            </button>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
                 </div>
               </div>
             )}
           </div>
         )}
 
-        {/* TAB 3: User Directory */}
+        {/* ================= TAB 3: User Directory ================= */}
         {activeTab === 'users' && (
           <div>
-            {!isSuperAdminUser ? (
+            {!currentUser?.isSuperAdmin ? (
               <div style={{ backgroundColor: '#1e293b', padding: '28px', borderRadius: '8px', textAlign: 'center', border: '1px solid #334155' }}>
-                <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '10px', color: '#f59e0b' }}>
-                  <Lock size={36} />
-                </div>
-                <h3 style={{ margin: '0 0 6px 0', color: '#f8fafc', fontSize: '16px' }}>Super Admin Authorization Required</h3>
-                <p style={{ margin: '0 0 16px 0', color: '#94a3b8', fontSize: '13px' }}>
-                  Please sign in with <code style={{ color: '#fbbf24' }}>fardin1.codezzi@gmail.com</code> to browse, search, and reset user credentials.
+                <Crown size={32} color="#f59e0b" style={{ margin: '0 auto 12px auto' }} />
+                <h3 style={{ fontSize: '16px', fontWeight: '700', margin: '0 0 6px 0', color: '#f8fafc' }}>
+                  Super Admin Authentication Required
+                </h3>
+                <p style={{ fontSize: '13px', color: '#94a3b8', margin: '0 0 16px 0' }}>
+                  Sign in above with credentials for <code>fardin1.codezzi@gmail.com</code> to access user profiles and reset credentials.
                 </p>
               </div>
             ) : (
               <div style={{ backgroundColor: '#1e293b', borderRadius: '8px', padding: '20px', border: '1px solid #334155' }}>
-                
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px', marginBottom: '18px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
                   <div>
-                    <h3 style={{ margin: 0, fontSize: '16px', color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <Users size={16} color="#34d399" /> Registered User Directory ({filteredUsers.length} / {usersList.length})
+                    <h3 style={{ fontSize: '15px', fontWeight: '700', margin: 0, color: '#f8fafc' }}>
+                      Registered Users ({filteredUsers.length} of {usersList.length})
                     </h3>
-                    <p style={{ margin: '3px 0 0 0', fontSize: '12px', color: '#94a3b8' }}>
-                      Search by user name, email, phone number, or mess name.
+                    <p style={{ fontSize: '11px', color: '#94a3b8', margin: '2px 0 0 0' }}>
+                      Search users, view mess memberships, and reset lost passwords.
                     </p>
                   </div>
 
-                  <div style={{ position: 'relative', minWidth: '240px' }}>
-                    <Search size={14} color="#94a3b8" style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)' }} />
-                    <input
-                      type="text"
-                      value={searchUserQuery}
-                      onChange={(e) => setSearchUserQuery(e.target.value)}
-                      placeholder="Filter users..."
-                      style={{
-                        width: '100%',
-                        padding: '7px 12px 7px 30px',
-                        backgroundColor: '#0f172a',
-                        border: '1px solid #334155',
-                        borderRadius: '6px',
-                        color: '#f8fafc',
-                        fontSize: '12px',
-                        boxSizing: 'border-box',
-                      }}
-                    />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ position: 'relative' }}>
+                      <Search size={14} style={{ position: 'absolute', left: '10px', top: '9px', color: '#64748b' }} />
+                      <input
+                        type="text"
+                        placeholder="Search by name, email, mess..."
+                        value={searchUserQuery}
+                        onChange={(e) => setSearchUserQuery(e.target.value)}
+                        style={{
+                          padding: '7px 10px 7px 30px',
+                          backgroundColor: '#0f172a',
+                          border: '1px solid #334155',
+                          borderRadius: '6px',
+                          color: '#fff',
+                          fontSize: '12px',
+                          width: '220px',
+                        }}
+                      />
+                    </div>
                   </div>
                 </div>
 
-                <div style={{ overflowX: 'auto' }}>
+                {/* Desktop Users Table */}
+                <div className="table-desktop-view" style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
                     <thead>
                       <tr style={{ borderBottom: '2px solid #334155', color: '#94a3b8', fontSize: '11px', textTransform: 'uppercase' }}>
@@ -1488,7 +2139,7 @@ export default function SuperAdminConsole() {
                                   gap: '4px',
                                 }}
                               >
-                                <KeyRound size={12} /> Reset / Edit
+                                <KeyRound size={12} /> Reset Credentials
                               </button>
                             </td>
                           </tr>
@@ -1498,284 +2149,2217 @@ export default function SuperAdminConsole() {
                   </table>
                 </div>
 
+                {/* Mobile Individual Cards for Users */}
+                <div className="cards-mobile-view">
+                  {filteredUsers.length === 0 ? (
+                    <div style={{ padding: '20px', textAlign: 'center', color: '#64748b' }}>
+                      No users matched your query.
+                    </div>
+                  ) : (
+                    filteredUsers.map((u) => (
+                      <div
+                        key={u.id}
+                        style={{
+                          backgroundColor: '#0f172a',
+                          border: '1px solid #334155',
+                          borderRadius: '6px',
+                          padding: '14px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '8px',
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div style={{ fontWeight: '700', fontSize: '14px', color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span>{u.name}</span>
+                            {u.isSuperAdmin && (
+                              <span style={{ backgroundColor: '#78350f', color: '#fbbf24', padding: '2px 5px', borderRadius: '4px', fontSize: '10px', fontWeight: '700', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                <Crown size={10} /> Admin
+                              </span>
+                            )}
+                          </div>
+                          <span style={{ fontSize: '11px', color: '#64748b' }}>
+                            {new Date(u.createdAt).toLocaleDateString()}
+                          </span>
+                        </div>
+
+                        <div style={{ fontSize: '12px', color: '#94a3b8' }}>
+                          <div><span style={{ color: '#64748b' }}>Email:</span> {u.email}</div>
+                          <div><span style={{ color: '#64748b' }}>Phone:</span> {u.phone || 'None'}</div>
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                          {u.activeMess ? (
+                            <span style={{ backgroundColor: '#1e1b4b', color: '#a5b4fc', padding: '2px 6px', borderRadius: '4px', fontSize: '11px', fontWeight: '600' }}>
+                              {u.activeMess.name} ({u.activeMess.inviteCode})
+                            </span>
+                          ) : (
+                            <span style={{ color: '#64748b', fontSize: '11px' }}>No active mess</span>
+                          )}
+
+                          {u.currentRole === 'MANAGER' ? (
+                            <span style={{ backgroundColor: '#78350f', color: '#fde68a', padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: '700' }}>
+                              MANAGER
+                            </span>
+                          ) : u.currentRole === 'MEMBER' ? (
+                            <span style={{ backgroundColor: '#064e3b', color: '#a7f3d0', padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: '700' }}>
+                              MEMBER
+                            </span>
+                          ) : null}
+                        </div>
+
+                        <div style={{ marginTop: '4px', paddingTop: '8px', borderTop: '1px solid #1e293b', display: 'flex', justifyContent: 'flex-end' }}>
+                          <button
+                            onClick={() => openEditUserModal(u)}
+                            style={{
+                              backgroundColor: '#2563eb',
+                              color: '#fff',
+                              border: 'none',
+                              padding: '6px 12px',
+                              borderRadius: '4px',
+                              fontSize: '11px',
+                              fontWeight: '600',
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                            }}
+                          >
+                            <KeyRound size={12} /> Reset Credentials
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
             )}
           </div>
         )}
 
-        {/* Reset Password & Edit User Modal */}
-        {selectedUserForEdit && (
-          <div
-            style={{
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              backgroundColor: 'rgba(0, 0, 0, 0.75)',
-              backdropFilter: 'blur(3px)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              zIndex: 10000,
-              padding: '16px',
-            }}
-          >
-            <div
-              className="modal-window"
-              style={{
-                backgroundColor: '#1e293b',
-                borderRadius: '8px',
-                border: '1px solid #475569',
-                padding: '22px',
-                width: '100%',
-                maxWidth: '500px',
-                boxShadow: '0 20px 40px rgba(0, 0, 0, 0.7)',
-                overflowY: 'auto',
-                maxHeight: '90vh',
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <KeyRound size={16} color="#fbbf24" /> Manage User & Reset Credentials
-                  </h3>
-                  <p style={{ margin: '3px 0 0 0', fontSize: '12px', color: '#94a3b8' }}>
-                    User ID: <span style={{ fontFamily: 'monospace', color: '#38bdf8' }}>{selectedUserForEdit.id}</span>
-                  </p>
-                </div>
-                <button
-                  onClick={() => setSelectedUserForEdit(null)}
-                  style={{
-                    background: 'transparent',
-                    border: 'none',
-                    color: '#94a3b8',
-                    cursor: 'pointer',
-                    padding: '2px',
-                  }}
-                >
-                  <X size={18} />
-                </button>
+        {/* ================= TAB 4: Tour Expense Management ================= */}
+        {activeTab === 'tours' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            {/* Header & Quick Action Buttons */}
+            <div style={{ backgroundColor: '#1e293b', borderRadius: '8px', padding: '16px 20px', border: '1px solid #334155', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+              <div>
+                <h2 style={{ fontSize: '16px', fontWeight: '700', margin: 0, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Compass size={18} color="#38bdf8" /> Tour Expense Management System
+                </h2>
+                <p style={{ fontSize: '11px', color: '#94a3b8', margin: '2px 0 0 0' }}>
+                  Manage tour budgets, deposits, shared expenses & member fair-share balances with Tour Lead & Accountant roles.
+                </p>
               </div>
 
-              <form onSubmit={handleUpdateUser} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#cbd5e1', marginBottom: '4px' }}>
-                    Full Name
-                  </label>
-                  <input
-                    type="text"
-                    value={editUserForm.name}
-                    onChange={(e) => setEditUserForm({ ...editUserForm, name: e.target.value })}
-                    required
-                    style={{
-                      width: '100%',
-                      padding: '8px 12px',
-                      backgroundColor: '#0f172a',
-                      border: '1px solid #334155',
-                      borderRadius: '6px',
-                      color: '#f8fafc',
-                      fontSize: '13px',
-                      boxSizing: 'border-box',
-                    }}
-                  />
-                </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <button
+                  onClick={() => setIsCreateTourOpen(true)}
+                  style={{
+                    backgroundColor: '#0284c7',
+                    color: '#fff',
+                    border: 'none',
+                    padding: '7px 12px',
+                    borderRadius: '6px',
+                    fontSize: '12px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                  }}
+                >
+                  <Plus size={14} /> Create Tour
+                </button>
+                <button
+                  onClick={() => setIsJoinTourOpen(true)}
+                  style={{
+                    backgroundColor: '#1e293b',
+                    color: '#e2e8f0',
+                    border: '1px solid #475569',
+                    padding: '7px 12px',
+                    borderRadius: '6px',
+                    fontSize: '12px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                  }}
+                >
+                  <MapPin size={14} /> Join via Code
+                </button>
+                <button
+                  onClick={fetchTours}
+                  style={{
+                    backgroundColor: '#0f172a',
+                    color: '#38bdf8',
+                    border: '1px solid #334155',
+                    padding: '7px 10px',
+                    borderRadius: '6px',
+                    fontSize: '12px',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                  }}
+                >
+                  <RefreshCw size={12} />
+                </button>
+              </div>
+            </div>
 
-                <div className="form-2col-responsive" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#cbd5e1', marginBottom: '4px' }}>
-                      Email Address
-                    </label>
-                    <input
-                      type="email"
-                      value={editUserForm.email}
-                      onChange={(e) => setEditUserForm({ ...editUserForm, email: e.target.value })}
-                      required
-                      style={{
-                        width: '100%',
-                        padding: '8px 12px',
-                        backgroundColor: '#0f172a',
-                        border: '1px solid #334155',
-                        borderRadius: '6px',
-                        color: '#f8fafc',
-                        fontSize: '13px',
-                        boxSizing: 'border-box',
-                      }}
-                    />
-                  </div>
-
-                  <div>
-                    <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#cbd5e1', marginBottom: '4px' }}>
-                      Phone (optional)
-                    </label>
-                    <input
-                      type="text"
-                      value={editUserForm.phone}
-                      onChange={(e) => setEditUserForm({ ...editUserForm, phone: e.target.value })}
-                      placeholder="+880..."
-                      style={{
-                        width: '100%',
-                        padding: '8px 12px',
-                        backgroundColor: '#0f172a',
-                        border: '1px solid #334155',
-                        borderRadius: '6px',
-                        color: '#f8fafc',
-                        fontSize: '13px',
-                        boxSizing: 'border-box',
-                      }}
-                    />
-                  </div>
-                </div>
-
-                {/* Password Reset Section */}
-                <div style={{ backgroundColor: '#090d16', padding: '14px', borderRadius: '6px', border: '1px solid #334155' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '5px' }}>
-                    <label style={{ fontSize: '12px', fontWeight: '700', color: '#fbbf24', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <Lock size={13} /> Reset Password
-                    </label>
+            {/* If a tour is currently inspected, show Detailed View */}
+            {selectedTourDetails ? (
+              <div style={{ backgroundColor: '#1e293b', borderRadius: '8px', padding: '20px', border: '1px solid #334155', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {/* Back button & Tour Header */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #334155', paddingBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <button
-                      type="button"
-                      onClick={generateRandomPassword}
+                      onClick={() => setSelectedTourDetails(null)}
                       style={{
-                        background: 'none',
-                        border: 'none',
-                        color: '#38bdf8',
+                        backgroundColor: '#0f172a',
+                        color: '#94a3b8',
+                        border: '1px solid #334155',
+                        padding: '6px 10px',
+                        borderRadius: '4px',
                         fontSize: '11px',
                         cursor: 'pointer',
+                      }}
+                    >
+                      ← Back to All Tours
+                    </button>
+                    <div>
+                      <h3 style={{ fontSize: '17px', fontWeight: '800', margin: 0, color: '#f8fafc' }}>
+                        {selectedTourDetails.tour.name}
+                      </h3>
+                      <div style={{ fontSize: '11px', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
+                        <span>📍 {selectedTourDetails.tour.destination || 'Unspecified Location'}</span>
+                        <span>•</span>
+                        <span>Invite Code: <strong style={{ color: '#38bdf8', fontFamily: 'monospace' }}>{selectedTourDetails.tour.inviteCode}</strong></span>
+                        <span>•</span>
+                        <span style={{ backgroundColor: '#064e3b', color: '#6ee7b7', padding: '1px 5px', borderRadius: '4px', fontSize: '10px' }}>
+                          {selectedTourDetails.tour.status}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <button
+                      onClick={() => setIsAddExpenseOpen(true)}
+                      style={{
+                        backgroundColor: '#b91c1c',
+                        color: '#fff',
+                        border: 'none',
+                        padding: '6px 12px',
+                        borderRadius: '4px',
+                        fontSize: '11px',
                         fontWeight: '600',
-                        textDecoration: 'underline',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '3px',
-                      }}
-                    >
-                      <Dices size={12} /> Generate Strong Password
-                    </button>
-                  </div>
-
-                  <div style={{ position: 'relative' }}>
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      value={editUserForm.newPassword}
-                      onChange={(e) => setEditUserForm({ ...editUserForm, newPassword: e.target.value })}
-                      placeholder="Leave blank to keep existing password"
-                      style={{
-                        width: '100%',
-                        padding: '8px 36px 8px 12px',
-                        backgroundColor: '#0f172a',
-                        border: '1px solid #475569',
-                        borderRadius: '6px',
-                        color: '#f8fafc',
-                        fontSize: '13px',
-                        fontFamily: showPassword ? 'monospace' : 'inherit',
-                        boxSizing: 'border-box',
-                      }}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      style={{
-                        position: 'absolute',
-                        right: '8px',
-                        top: '50%',
-                        transform: 'translateY(-50%)',
-                        background: 'none',
-                        border: 'none',
-                        color: '#94a3b8',
-                        cursor: 'pointer',
-                        padding: '4px',
-                      }}
-                    >
-                      {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
-                    </button>
-                  </div>
-                  <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>
-                    Minimum 6 characters. If populated, replaces the user's password immediately.
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0' }}>
-                  <input
-                    type="checkbox"
-                    id="modalSuperAdminToggle"
-                    checked={editUserForm.isSuperAdmin}
-                    onChange={(e) => setEditUserForm({ ...editUserForm, isSuperAdmin: e.target.checked })}
-                    style={{ width: '15px', height: '15px', cursor: 'pointer' }}
-                  />
-                  <label htmlFor="modalSuperAdminToggle" style={{ fontSize: '12px', color: '#fbbf24', fontWeight: '600', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                    <ShieldCheck size={14} /> Grant Super Admin Privileges
-                  </label>
-                </div>
-
-                {/* Action Buttons */}
-                <div style={{ display: 'flex', gap: '8px', marginTop: '6px', flexWrap: 'wrap' }}>
-                  <button
-                    type="submit"
-                    disabled={isUpdatingUser}
-                    style={{
-                      flex: 1,
-                      backgroundColor: '#2563eb',
-                      color: '#ffffff',
-                      border: 'none',
-                      padding: '10px 14px',
-                      borderRadius: '6px',
-                      fontSize: '13px',
-                      fontWeight: '700',
-                      cursor: 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '5px',
-                    }}
-                  >
-                    <Save size={14} /> {isUpdatingUser ? 'Saving...' : 'Save User Changes'}
-                  </button>
-
-                  {editUserForm.newPassword && (
-                    <button
-                      type="button"
-                      onClick={copyCredentials}
-                      style={{
-                        backgroundColor: '#059669',
-                        color: '#ffffff',
-                        border: 'none',
-                        padding: '10px 14px',
-                        borderRadius: '6px',
-                        fontSize: '12px',
-                        fontWeight: '700',
                         cursor: 'pointer',
                         display: 'inline-flex',
                         alignItems: 'center',
                         gap: '4px',
                       }}
                     >
-                      <Copy size={13} /> Copy Credentials
+                      <Receipt size={13} /> Add Expense
                     </button>
-                  )}
+                    <button
+                      onClick={() => setIsAddDepositOpen(true)}
+                      style={{
+                        backgroundColor: '#059669',
+                        color: '#fff',
+                        border: 'none',
+                        padding: '6px 12px',
+                        borderRadius: '4px',
+                        fontSize: '11px',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                      }}
+                    >
+                      <Wallet size={13} /> Add Deposit
+                    </button>
+                    <button
+                      onClick={() => setIsAddMemberOpen(true)}
+                      style={{
+                        backgroundColor: '#2563eb',
+                        color: '#fff',
+                        border: 'none',
+                        padding: '6px 12px',
+                        borderRadius: '4px',
+                        fontSize: '11px',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                      }}
+                    >
+                      <UserPlus size={13} /> Add Member
+                    </button>
+                  </div>
+                </div>
 
+                {/* Tour KPI Summary Cards */}
+                <div className="tour-summary-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '10px' }}>
+                  <div style={{ backgroundColor: '#0f172a', padding: '12px', borderRadius: '6px', border: '1px solid #334155' }}>
+                    <div style={{ fontSize: '11px', color: '#94a3b8' }}>Total Budget</div>
+                    <div style={{ fontSize: '18px', fontWeight: '800', color: '#f8fafc', marginTop: '2px' }}>
+                      ৳{selectedTourDetails.summary.budget.toLocaleString()}
+                    </div>
+                  </div>
+                  <div style={{ backgroundColor: '#0f172a', padding: '12px', borderRadius: '6px', border: '1px solid #334155' }}>
+                    <div style={{ fontSize: '11px', color: '#94a3b8' }}>Total Deposits</div>
+                    <div style={{ fontSize: '18px', fontWeight: '800', color: '#34d399', marginTop: '2px' }}>
+                      ৳{selectedTourDetails.summary.totalDeposits.toLocaleString()}
+                    </div>
+                  </div>
+                  <div style={{ backgroundColor: '#0f172a', padding: '12px', borderRadius: '6px', border: '1px solid #334155' }}>
+                    <div style={{ fontSize: '11px', color: '#94a3b8' }}>Total Expenses</div>
+                    <div style={{ fontSize: '18px', fontWeight: '800', color: '#f87171', marginTop: '2px' }}>
+                      ৳{selectedTourDetails.summary.totalExpenses.toLocaleString()}
+                    </div>
+                  </div>
+                  <div style={{ backgroundColor: '#0f172a', padding: '12px', borderRadius: '6px', border: '1px solid #334155' }}>
+                    <div style={{ fontSize: '11px', color: '#94a3b8' }}>Fund Balance</div>
+                    <div style={{ fontSize: '18px', fontWeight: '800', color: selectedTourDetails.summary.balance >= 0 ? '#38bdf8' : '#ef4444', marginTop: '2px' }}>
+                      ৳{selectedTourDetails.summary.balance.toLocaleString()}
+                    </div>
+                  </div>
+                  <div style={{ backgroundColor: '#0f172a', padding: '12px', borderRadius: '6px', border: '1px solid #334155' }}>
+                    <div style={{ fontSize: '11px', color: '#94a3b8' }}>Per-Member Share</div>
+                    <div style={{ fontSize: '18px', fontWeight: '800', color: '#fbbf24', marginTop: '2px' }}>
+                      ৳{selectedTourDetails.summary.perMemberShare.toLocaleString()}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Sub Tab Navigation */}
+                <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid #334155', paddingBottom: '8px', flexWrap: 'wrap' }}>
                   <button
-                    type="button"
-                    onClick={() => setSelectedUserForEdit(null)}
+                    onClick={() => setTourSubTab('overview')}
                     style={{
-                      backgroundColor: '#334155',
-                      color: '#cbd5e1',
+                      padding: '6px 12px',
+                      backgroundColor: tourSubTab === 'overview' ? '#0284c7' : '#0f172a',
+                      color: '#fff',
                       border: 'none',
-                      padding: '10px 14px',
-                      borderRadius: '6px',
-                      fontSize: '13px',
+                      borderRadius: '4px',
+                      fontSize: '12px',
                       fontWeight: '600',
                       cursor: 'pointer',
                     }}
                   >
-                    Cancel
+                    Members & Balances ({selectedTourDetails.members.length})
+                  </button>
+                  <button
+                    onClick={() => setTourSubTab('expenses')}
+                    style={{
+                      padding: '6px 12px',
+                      backgroundColor: tourSubTab === 'expenses' ? '#0284c7' : '#0f172a',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: '4px',
+                      fontSize: '12px',
+                      fontWeight: '600',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Expenses List ({selectedTourDetails.expenses.length})
+                  </button>
+                  <button
+                    onClick={() => setTourSubTab('deposits')}
+                    style={{
+                      padding: '6px 12px',
+                      backgroundColor: tourSubTab === 'deposits' ? '#0284c7' : '#0f172a',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: '4px',
+                      fontSize: '12px',
+                      fontWeight: '600',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Deposits / Payments ({selectedTourDetails.deposits.length})
                   </button>
                 </div>
-              </form>
-            </div>
+
+                {/* Sub Tab 1: Members & Balances */}
+                {tourSubTab === 'overview' && (
+                  <div>
+                    {/* Desktop View */}
+                    <div className="table-desktop-view" style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+                        <thead>
+                          <tr style={{ borderBottom: '2px solid #334155', color: '#94a3b8', fontSize: '11px', textTransform: 'uppercase' }}>
+                            <th style={{ padding: '8px 10px' }}>Member</th>
+                            <th style={{ padding: '8px 10px' }}>Role</th>
+                            <th style={{ padding: '8px 10px' }}>Paid / Deposited</th>
+                            <th style={{ padding: '8px 10px' }}>Fair Share Cost</th>
+                            <th style={{ padding: '8px 10px' }}>Net Balance</th>
+                            <th style={{ padding: '8px 10px', textAlign: 'right' }}>Role / Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {selectedTourDetails.members.map((m) => (
+                            <tr key={m.id} style={{ borderBottom: '1px solid #334155' }}>
+                              <td style={{ padding: '10px', fontWeight: '600', color: '#f8fafc' }}>
+                                <div>{m.name}</div>
+                                <div style={{ fontSize: '11px', color: '#64748b' }}>{m.email || m.phone || 'No contact'}</div>
+                              </td>
+                              <td style={{ padding: '10px' }}>
+                                <span
+                                  style={{
+                                    backgroundColor: m.role === 'LEAD' ? '#78350f' : m.role === 'ACCOUNTANT' ? '#1e1b4b' : '#064e3b',
+                                    color: m.role === 'LEAD' ? '#fbbf24' : m.role === 'ACCOUNTANT' ? '#a5b4fc' : '#a7f3d0',
+                                    padding: '2px 6px',
+                                    borderRadius: '4px',
+                                    fontSize: '10px',
+                                    fontWeight: '700',
+                                  }}
+                                >
+                                  {m.role}
+                                </span>
+                              </td>
+                              <td style={{ padding: '10px', color: '#34d399', fontWeight: '600' }}>
+                                ৳{m.totalDeposited.toLocaleString()}
+                              </td>
+                              <td style={{ padding: '10px', color: '#94a3b8' }}>
+                                ৳{m.shareCost.toLocaleString()}
+                              </td>
+                              <td style={{ padding: '10px' }}>
+                                {m.netBalance >= 0 ? (
+                                  <span style={{ color: '#38bdf8', fontWeight: '700', fontSize: '12px' }}>
+                                    +৳{m.netBalance.toLocaleString()} (Refund Due)
+                                  </span>
+                                ) : (
+                                  <span style={{ color: '#f87171', fontWeight: '700', fontSize: '12px' }}>
+                                    -৳{Math.abs(m.netBalance).toLocaleString()} (Due to Pay)
+                                  </span>
+                                )}
+                              </td>
+                              <td style={{ padding: '10px', textAlign: 'right' }}>
+                                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                  <select
+                                    value={m.role}
+                                    onChange={(e) => handleUpdateMemberRole(m.id, e.target.value)}
+                                    style={{
+                                      backgroundColor: '#0f172a',
+                                      color: '#cbd5e1',
+                                      border: '1px solid #334155',
+                                      padding: '3px 6px',
+                                      borderRadius: '4px',
+                                      fontSize: '11px',
+                                    }}
+                                  >
+                                    <option value="MEMBER">MEMBER</option>
+                                    <option value="ACCOUNTANT">ACCOUNTANT</option>
+                                    <option value="LEAD">LEAD</option>
+                                  </select>
+                                  <button
+                                    onClick={() => handleRemoveMember(m.id, m.name)}
+                                    style={{
+                                      backgroundColor: '#7f1d1d',
+                                      color: '#fca5a5',
+                                      border: '1px solid #b91c1c',
+                                      padding: '3px 6px',
+                                      borderRadius: '4px',
+                                      fontSize: '11px',
+                                      cursor: 'pointer',
+                                    }}
+                                  >
+                                    <Trash2 size={11} />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Mobile Cards for Members */}
+                    <div className="cards-mobile-view">
+                      {selectedTourDetails.members.map((m) => (
+                        <div
+                          key={m.id}
+                          style={{
+                            backgroundColor: '#0f172a',
+                            border: '1px solid #334155',
+                            borderRadius: '6px',
+                            padding: '12px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '6px',
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div style={{ fontWeight: '700', fontSize: '14px', color: '#f8fafc' }}>{m.name}</div>
+                            <span
+                              style={{
+                                backgroundColor: m.role === 'LEAD' ? '#78350f' : m.role === 'ACCOUNTANT' ? '#1e1b4b' : '#064e3b',
+                                color: m.role === 'LEAD' ? '#fbbf24' : m.role === 'ACCOUNTANT' ? '#a5b4fc' : '#a7f3d0',
+                                padding: '2px 6px',
+                                borderRadius: '4px',
+                                fontSize: '10px',
+                                fontWeight: '700',
+                              }}
+                            >
+                              {m.role}
+                            </span>
+                          </div>
+
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '12px', marginTop: '4px' }}>
+                            <div>
+                              <span style={{ color: '#94a3b8' }}>Deposited:</span>{' '}
+                              <strong style={{ color: '#34d399' }}>৳{m.totalDeposited}</strong>
+                            </div>
+                            <div>
+                              <span style={{ color: '#94a3b8' }}>Fair Share:</span>{' '}
+                              <strong style={{ color: '#e2e8f0' }}>৳{m.shareCost}</strong>
+                            </div>
+                          </div>
+
+                          <div style={{ fontSize: '12px', marginTop: '2px' }}>
+                            <span style={{ color: '#94a3b8' }}>Status:</span>{' '}
+                            {m.netBalance >= 0 ? (
+                              <span style={{ color: '#38bdf8', fontWeight: '700' }}>
+                                +৳{m.netBalance} (Refund Due)
+                              </span>
+                            ) : (
+                              <span style={{ color: '#f87171', fontWeight: '700' }}>
+                                -৳{Math.abs(m.netBalance)} (Due to Pay)
+                              </span>
+                            )}
+                          </div>
+
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px', paddingTop: '8px', borderTop: '1px solid #1e293b' }}>
+                            <select
+                              value={m.role}
+                              onChange={(e) => handleUpdateMemberRole(m.id, e.target.value)}
+                              style={{
+                                backgroundColor: '#1e293b',
+                                color: '#cbd5e1',
+                                border: '1px solid #334155',
+                                padding: '4px 8px',
+                                borderRadius: '4px',
+                                fontSize: '11px',
+                              }}
+                            >
+                              <option value="MEMBER">Role: MEMBER</option>
+                              <option value="ACCOUNTANT">Role: ACCOUNTANT</option>
+                              <option value="LEAD">Role: LEAD</option>
+                            </select>
+                            <button
+                              onClick={() => handleRemoveMember(m.id, m.name)}
+                              style={{
+                                backgroundColor: '#7f1d1d',
+                                color: '#fca5a5',
+                                border: '1px solid #b91c1c',
+                                padding: '4px 8px',
+                                borderRadius: '4px',
+                                fontSize: '11px',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Sub Tab 2: Expenses List */}
+                {tourSubTab === 'expenses' && (
+                  <div>
+                    {/* Desktop View */}
+                    <div className="table-desktop-view" style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+                        <thead>
+                          <tr style={{ borderBottom: '2px solid #334155', color: '#94a3b8', fontSize: '11px', textTransform: 'uppercase' }}>
+                            <th style={{ padding: '8px 10px' }}>Expense Item</th>
+                            <th style={{ padding: '8px 10px' }}>Category</th>
+                            <th style={{ padding: '8px 10px' }}>Amount (৳)</th>
+                            <th style={{ padding: '8px 10px' }}>Spent By</th>
+                            <th style={{ padding: '8px 10px' }}>Date</th>
+                            <th style={{ padding: '8px 10px', textAlign: 'right' }}>Action</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {selectedTourDetails.expenses.length === 0 ? (
+                            <tr>
+                              <td colSpan={6} style={{ padding: '20px', textAlign: 'center', color: '#64748b' }}>
+                                No expenses recorded yet. Click &quot;Add Expense&quot; above.
+                              </td>
+                            </tr>
+                          ) : (
+                            selectedTourDetails.expenses.map((exp) => (
+                              <tr key={exp.id} style={{ borderBottom: '1px solid #334155' }}>
+                                <td style={{ padding: '10px', fontWeight: '600', color: '#f8fafc' }}>
+                                  <div>{exp.title}</div>
+                                  {exp.notes && <div style={{ fontSize: '11px', color: '#94a3b8' }}>{exp.notes}</div>}
+                                </td>
+                                <td style={{ padding: '10px' }}>
+                                  <span style={{ backgroundColor: '#1e293b', border: '1px solid #475569', padding: '2px 6px', borderRadius: '4px', fontSize: '11px', color: '#38bdf8' }}>
+                                    {exp.category}
+                                  </span>
+                                </td>
+                                <td style={{ padding: '10px', fontWeight: '700', color: '#f87171' }}>
+                                  ৳{exp.amount.toLocaleString()}
+                                </td>
+                                <td style={{ padding: '10px', color: '#cbd5e1' }}>
+                                  {exp.spentBy}
+                                </td>
+                                <td style={{ padding: '10px', color: '#94a3b8', fontSize: '12px' }}>
+                                  {new Date(exp.date).toLocaleDateString()}
+                                </td>
+                                <td style={{ padding: '10px', textAlign: 'right' }}>
+                                  <button
+                                    onClick={() => handleDeleteExpense(exp.id)}
+                                    style={{
+                                      backgroundColor: '#7f1d1d',
+                                      color: '#fca5a5',
+                                      border: '1px solid #b91c1c',
+                                      padding: '3px 8px',
+                                      borderRadius: '4px',
+                                      fontSize: '11px',
+                                      cursor: 'pointer',
+                                    }}
+                                  >
+                                    <Trash2 size={12} />
+                                  </button>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Mobile Cards for Expenses */}
+                    <div className="cards-mobile-view">
+                      {selectedTourDetails.expenses.length === 0 ? (
+                        <div style={{ padding: '20px', textAlign: 'center', color: '#64748b' }}>
+                          No expenses recorded yet.
+                        </div>
+                      ) : (
+                        selectedTourDetails.expenses.map((exp) => (
+                          <div
+                            key={exp.id}
+                            style={{
+                              backgroundColor: '#0f172a',
+                              border: '1px solid #334155',
+                              borderRadius: '6px',
+                              padding: '12px',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '6px',
+                            }}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                              <div style={{ fontWeight: '700', fontSize: '14px', color: '#f8fafc' }}>{exp.title}</div>
+                              <span style={{ color: '#f87171', fontWeight: '800', fontSize: '14px' }}>
+                                ৳{exp.amount}
+                              </span>
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
+                              <span style={{ backgroundColor: '#1e293b', border: '1px solid #475569', padding: '2px 6px', borderRadius: '4px', fontSize: '10px', color: '#38bdf8' }}>
+                                {exp.category}
+                              </span>
+                              <span style={{ color: '#94a3b8' }}>Spent by: {exp.spentBy}</span>
+                            </div>
+
+                            {exp.notes && (
+                              <div style={{ fontSize: '11px', color: '#cbd5e1', fontStyle: 'italic' }}>
+                                Note: {exp.notes}
+                              </div>
+                            )}
+
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px', paddingTop: '6px', borderTop: '1px solid #1e293b' }}>
+                              <span style={{ fontSize: '11px', color: '#64748b' }}>
+                                {new Date(exp.date).toLocaleDateString()}
+                              </span>
+                              <button
+                                onClick={() => handleDeleteExpense(exp.id)}
+                                style={{
+                                  backgroundColor: '#7f1d1d',
+                                  color: '#fca5a5',
+                                  border: '1px solid #b91c1c',
+                                  padding: '4px 8px',
+                                  borderRadius: '4px',
+                                  fontSize: '11px',
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Sub Tab 3: Deposits List */}
+                {tourSubTab === 'deposits' && (
+                  <div>
+                    {/* Desktop View */}
+                    <div className="table-desktop-view" style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+                        <thead>
+                          <tr style={{ borderBottom: '2px solid #334155', color: '#94a3b8', fontSize: '11px', textTransform: 'uppercase' }}>
+                            <th style={{ padding: '8px 10px' }}>Member / Paid By</th>
+                            <th style={{ padding: '8px 10px' }}>Amount (৳)</th>
+                            <th style={{ padding: '8px 10px' }}>Date</th>
+                            <th style={{ padding: '8px 10px' }}>Notes / Transaction</th>
+                            <th style={{ padding: '8px 10px', textAlign: 'right' }}>Action</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {selectedTourDetails.deposits.length === 0 ? (
+                            <tr>
+                              <td colSpan={5} style={{ padding: '20px', textAlign: 'center', color: '#64748b' }}>
+                                No deposits recorded yet. Click &quot;Add Deposit&quot; above.
+                              </td>
+                            </tr>
+                          ) : (
+                            selectedTourDetails.deposits.map((dep) => (
+                              <tr key={dep.id} style={{ borderBottom: '1px solid #334155' }}>
+                                <td style={{ padding: '10px', fontWeight: '600', color: '#f8fafc' }}>
+                                  {dep.paidBy}
+                                </td>
+                                <td style={{ padding: '10px', fontWeight: '700', color: '#34d399' }}>
+                                  ৳{dep.amount.toLocaleString()}
+                                </td>
+                                <td style={{ padding: '10px', color: '#94a3b8', fontSize: '12px' }}>
+                                  {new Date(dep.date).toLocaleDateString()}
+                                </td>
+                                <td style={{ padding: '10px', color: '#cbd5e1', fontSize: '12px' }}>
+                                  {dep.notes || '—'}
+                                </td>
+                                <td style={{ padding: '10px', textAlign: 'right' }}>
+                                  <button
+                                    onClick={() => handleDeleteDeposit(dep.id)}
+                                    style={{
+                                      backgroundColor: '#7f1d1d',
+                                      color: '#fca5a5',
+                                      border: '1px solid #b91c1c',
+                                      padding: '3px 8px',
+                                      borderRadius: '4px',
+                                      fontSize: '11px',
+                                      cursor: 'pointer',
+                                    }}
+                                  >
+                                    <Trash2 size={12} />
+                                  </button>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Mobile Cards for Deposits */}
+                    <div className="cards-mobile-view">
+                      {selectedTourDetails.deposits.length === 0 ? (
+                        <div style={{ padding: '20px', textAlign: 'center', color: '#64748b' }}>
+                          No deposits recorded yet.
+                        </div>
+                      ) : (
+                        selectedTourDetails.deposits.map((dep) => (
+                          <div
+                            key={dep.id}
+                            style={{
+                              backgroundColor: '#0f172a',
+                              border: '1px solid #334155',
+                              borderRadius: '6px',
+                              padding: '12px',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '6px',
+                            }}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <div style={{ fontWeight: '700', fontSize: '14px', color: '#f8fafc' }}>{dep.paidBy}</div>
+                              <span style={{ color: '#34d399', fontWeight: '800', fontSize: '14px' }}>
+                                +৳{dep.amount}
+                              </span>
+                            </div>
+
+                            {dep.notes && (
+                              <div style={{ fontSize: '11px', color: '#cbd5e1' }}>
+                                Note: {dep.notes}
+                              </div>
+                            )}
+
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px', paddingTop: '6px', borderTop: '1px solid #1e293b' }}>
+                              <span style={{ fontSize: '11px', color: '#64748b' }}>
+                                {new Date(dep.date).toLocaleDateString()}
+                              </span>
+                              <button
+                                onClick={() => handleDeleteDeposit(dep.id)}
+                                style={{
+                                  backgroundColor: '#7f1d1d',
+                                  color: '#fca5a5',
+                                  border: '1px solid #b91c1c',
+                                  padding: '4px 8px',
+                                  borderRadius: '4px',
+                                  fontSize: '11px',
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              /* All Tours List */
+              <div style={{ backgroundColor: '#1e293b', borderRadius: '8px', padding: '20px', border: '1px solid #334155' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
+                  <h3 style={{ fontSize: '15px', fontWeight: '700', margin: 0, color: '#f8fafc' }}>
+                    Available Tours ({toursList.length})
+                  </h3>
+                  <span style={{ fontSize: '11px', color: '#94a3b8' }}>
+                    Click &quot;View & Manage&quot; to inspect budgets, expenses, and member balances.
+                  </span>
+                </div>
+
+                {/* Desktop Tours Table */}
+                <div className="table-desktop-view" style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '2px solid #334155', color: '#94a3b8', fontSize: '11px', textTransform: 'uppercase' }}>
+                        <th style={{ padding: '10px 12px' }}>Tour Name</th>
+                        <th style={{ padding: '10px 12px' }}>Destination</th>
+                        <th style={{ padding: '10px 12px' }}>Invite Code</th>
+                        <th style={{ padding: '10px 12px' }}>Budget (৳)</th>
+                        <th style={{ padding: '10px 12px' }}>Deposits / Expenses</th>
+                        <th style={{ padding: '10px 12px' }}>Members</th>
+                        <th style={{ padding: '10px 12px', textAlign: 'right' }}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {toursList.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} style={{ padding: '24px', textAlign: 'center', color: '#64748b' }}>
+                            No tours found. Click &quot;Create Tour&quot; above to launch a new tour!
+                          </td>
+                        </tr>
+                      ) : (
+                        toursList.map((t) => (
+                          <tr key={t.id} style={{ borderBottom: '1px solid #334155' }}>
+                            <td style={{ padding: '12px', fontWeight: '600', color: '#f8fafc' }}>
+                              <div>{t.name}</div>
+                              <div style={{ fontSize: '11px', color: '#64748b' }}>Lead: {t.leadName}</div>
+                            </td>
+                            <td style={{ padding: '12px', color: '#cbd5e1' }}>
+                              {t.destination || '—'}
+                            </td>
+                            <td style={{ padding: '12px' }}>
+                              <span style={{ backgroundColor: '#0f172a', border: '1px solid #475569', padding: '2px 6px', borderRadius: '4px', fontFamily: 'monospace', color: '#38bdf8' }}>
+                                {t.inviteCode}
+                              </span>
+                            </td>
+                            <td style={{ padding: '12px', color: '#fbbf24', fontWeight: '600' }}>
+                              ৳{t.budget.toLocaleString()}
+                            </td>
+                            <td style={{ padding: '12px' }}>
+                              <div style={{ color: '#34d399', fontSize: '12px' }}>Deposits: ৳{t.totalDeposits.toLocaleString()}</div>
+                              <div style={{ color: '#f87171', fontSize: '12px' }}>Expenses: ৳{t.totalExpenses.toLocaleString()}</div>
+                            </td>
+                            <td style={{ padding: '12px' }}>
+                              <span style={{ backgroundColor: '#064e3b', color: '#6ee7b7', padding: '2px 6px', borderRadius: '4px', fontSize: '11px', fontWeight: '600' }}>
+                                {t.membersCount} participants
+                              </span>
+                            </td>
+                            <td style={{ padding: '12px', textAlign: 'right' }}>
+                              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                <button
+                                  onClick={() => fetchTourDetails(t.id)}
+                                  disabled={isLoadingTourDetails}
+                                  style={{
+                                    backgroundColor: '#0284c7',
+                                    color: '#fff',
+                                    border: 'none',
+                                    padding: '5px 10px',
+                                    borderRadius: '4px',
+                                    fontSize: '11px',
+                                    fontWeight: '600',
+                                    cursor: 'pointer',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                  }}
+                                >
+                                  View & Manage <ChevronRight size={12} />
+                                </button>
+                                {(t.myRole === 'LEAD' || currentUser?.isSuperAdmin) && (
+                                  <button
+                                    onClick={() => handleDeleteTour(t.id, t.name)}
+                                    disabled={deletingTourId === t.id}
+                                    style={{
+                                      backgroundColor: '#7f1d1d',
+                                      color: '#fca5a5',
+                                      border: '1px solid #b91c1c',
+                                      padding: '5px 8px',
+                                      borderRadius: '4px',
+                                      fontSize: '11px',
+                                      cursor: 'pointer',
+                                    }}
+                                  >
+                                    <Trash2 size={12} />
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Mobile Individual Cards for Tours */}
+                <div className="cards-mobile-view">
+                  {toursList.length === 0 ? (
+                    <div style={{ padding: '20px', textAlign: 'center', color: '#64748b' }}>
+                      No tours found. Click &quot;Create Tour&quot; above to launch a new tour!
+                    </div>
+                  ) : (
+                    toursList.map((t) => (
+                      <div
+                        key={t.id}
+                        style={{
+                          backgroundColor: '#0f172a',
+                          border: '1px solid #334155',
+                          borderRadius: '6px',
+                          padding: '14px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '8px',
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <div>
+                            <div style={{ fontWeight: '700', fontSize: '15px', color: '#f8fafc' }}>{t.name}</div>
+                            <div style={{ fontSize: '11px', color: '#38bdf8', marginTop: '2px' }}>
+                              📍 {t.destination || 'Unspecified location'}
+                            </div>
+                          </div>
+                          <span style={{ backgroundColor: '#064e3b', color: '#6ee7b7', padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: '600' }}>
+                            {t.status}
+                          </span>
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ fontSize: '11px', color: '#94a3b8' }}>Invite Code:</span>
+                          <span style={{ backgroundColor: '#1e293b', border: '1px solid #475569', padding: '2px 6px', borderRadius: '4px', fontFamily: 'monospace', color: '#38bdf8', fontSize: '12px' }}>
+                            {t.inviteCode}
+                          </span>
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '12px', marginTop: '4px' }}>
+                          <div>
+                            <span style={{ color: '#94a3b8' }}>Budget:</span>{' '}
+                            <strong style={{ color: '#fbbf24' }}>৳{t.budget}</strong>
+                          </div>
+                          <div>
+                            <span style={{ color: '#94a3b8' }}>Members:</span>{' '}
+                            <strong style={{ color: '#f8fafc' }}>{t.membersCount}</strong>
+                          </div>
+                          <div>
+                            <span style={{ color: '#94a3b8' }}>Deposits:</span>{' '}
+                            <strong style={{ color: '#34d399' }}>৳{t.totalDeposits}</strong>
+                          </div>
+                          <div>
+                            <span style={{ color: '#94a3b8' }}>Expenses:</span>{' '}
+                            <strong style={{ color: '#f87171' }}>৳{t.totalExpenses}</strong>
+                          </div>
+                        </div>
+
+                        <div style={{ fontSize: '11px', color: '#64748b' }}>
+                          Lead: {t.leadName}
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px', paddingTop: '8px', borderTop: '1px solid #1e293b' }}>
+                          <button
+                            onClick={() => fetchTourDetails(t.id)}
+                            style={{
+                              backgroundColor: '#0284c7',
+                              color: '#fff',
+                              border: 'none',
+                              padding: '6px 12px',
+                              borderRadius: '4px',
+                              fontSize: '11px',
+                              fontWeight: '600',
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                            }}
+                          >
+                            View & Manage <ChevronRight size={12} />
+                          </button>
+                          {(t.myRole === 'LEAD' || currentUser?.isSuperAdmin) && (
+                            <button
+                              onClick={() => handleDeleteTour(t.id, t.name)}
+                              style={{
+                                backgroundColor: '#7f1d1d',
+                                color: '#fca5a5',
+                                border: '1px solid #b91c1c',
+                                padding: '6px 10px',
+                                borderRadius: '4px',
+                                fontSize: '11px',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              Delete
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
       </main>
+
+      {/* ================= MODAL: Edit User & Reset Password ================= */}
+      {selectedUserForEdit && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.75)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            padding: '16px',
+            boxSizing: 'border-box',
+          }}
+        >
+          <div
+            className="modal-box-responsive"
+            style={{
+              backgroundColor: '#1e293b',
+              border: '1px solid #334155',
+              borderRadius: '8px',
+              width: '100%',
+              maxWidth: '520px',
+              padding: '24px',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '16px',
+              maxHeight: '90vh',
+              overflowY: 'auto',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #334155', paddingBottom: '12px' }}>
+              <div>
+                <h3 style={{ fontSize: '16px', fontWeight: '700', margin: 0, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <KeyRound size={18} color="#f59e0b" /> User Account Management
+                </h3>
+                <p style={{ fontSize: '11px', color: '#94a3b8', margin: '2px 0 0 0' }}>
+                  Reset forgotten passwords or update user profile information.
+                </p>
+              </div>
+              <button
+                onClick={closeEditUserModal}
+                style={{
+                  backgroundColor: 'transparent',
+                  border: 'none',
+                  color: '#94a3b8',
+                  cursor: 'pointer',
+                  padding: '4px',
+                }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdateUserSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div className="form-2col-responsive" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', color: '#94a3b8', marginBottom: '4px', fontWeight: '500' }}>
+                    Full Name
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editUserForm.name}
+                    onChange={(e) => setEditUserForm({ ...editUserForm, name: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      backgroundColor: '#0f172a',
+                      border: '1px solid #334155',
+                      borderRadius: '6px',
+                      color: '#fff',
+                      fontSize: '13px',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', color: '#94a3b8', marginBottom: '4px', fontWeight: '500' }}>
+                    Email Address
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    value={editUserForm.email}
+                    onChange={(e) => setEditUserForm({ ...editUserForm, email: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      backgroundColor: '#0f172a',
+                      border: '1px solid #334155',
+                      borderRadius: '6px',
+                      color: '#fff',
+                      fontSize: '13px',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', color: '#94a3b8', marginBottom: '4px', fontWeight: '500' }}>
+                  Phone Number
+                </label>
+                <input
+                  type="text"
+                  placeholder="+8801..."
+                  value={editUserForm.phone}
+                  onChange={(e) => setEditUserForm({ ...editUserForm, phone: e.target.value })}
+                  style={{
+                    width: '100%',
+                    padding: '8px 12px',
+                    backgroundColor: '#0f172a',
+                    border: '1px solid #334155',
+                    borderRadius: '6px',
+                    color: '#fff',
+                    fontSize: '13px',
+                    boxSizing: 'border-box',
+                  }}
+                />
+              </div>
+
+              {/* Password Reset Section */}
+              <div style={{ backgroundColor: '#090d16', padding: '14px', borderRadius: '6px', border: '1px solid #334155' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <label style={{ fontSize: '12px', color: '#f8fafc', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Lock size={13} color="#f59e0b" /> Set New Password
+                  </label>
+                  <button
+                    type="button"
+                    onClick={generateRandomPassword}
+                    style={{
+                      backgroundColor: '#1e293b',
+                      color: '#38bdf8',
+                      border: '1px solid #334155',
+                      padding: '3px 8px',
+                      borderRadius: '4px',
+                      fontSize: '11px',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                    }}
+                  >
+                    <Dices size={12} /> Auto-Generate
+                  </button>
+                </div>
+
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    placeholder="Leave blank to keep existing password"
+                    value={editUserForm.newPassword}
+                    onChange={(e) => setEditUserForm({ ...editUserForm, newPassword: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '8px 75px 8px 12px',
+                      backgroundColor: '#0f172a',
+                      border: '1px solid #334155',
+                      borderRadius: '6px',
+                      color: '#fff',
+                      fontSize: '13px',
+                      fontFamily: showPassword ? 'monospace' : 'inherit',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                  <div style={{ position: 'absolute', right: '6px', top: '5px', display: 'flex', gap: '4px' }}>
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      style={{
+                        backgroundColor: '#1e293b',
+                        border: 'none',
+                        color: '#94a3b8',
+                        padding: '4px 6px',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {showPassword ? <EyeOff size={13} /> : <Eye size={13} />}
+                    </button>
+                    {editUserForm.newPassword && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(editUserForm.newPassword);
+                          showToast('Password copied to clipboard', 'info');
+                        }}
+                        style={{
+                          backgroundColor: '#1e293b',
+                          border: 'none',
+                          color: '#38bdf8',
+                          padding: '4px 6px',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <Copy size={13} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <p style={{ fontSize: '11px', color: '#64748b', margin: '6px 0 0 0' }}>
+                  Provide this password to the user once updated so they can sign back in.
+                </p>
+              </div>
+
+              {/* Super Admin Toggle */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 0' }}>
+                <input
+                  type="checkbox"
+                  id="modalSuperAdminToggle"
+                  checked={editUserForm.isSuperAdmin}
+                  onChange={(e) => setEditUserForm({ ...editUserForm, isSuperAdmin: e.target.checked })}
+                />
+                <label htmlFor="modalSuperAdminToggle" style={{ fontSize: '12px', color: '#e2e8f0', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  Grant Super Admin Privileges <Crown size={12} color="#fbbf24" />
+                </label>
+              </div>
+
+              {/* Action Buttons */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
+                <button
+                  type="button"
+                  onClick={closeEditUserModal}
+                  style={{
+                    backgroundColor: '#0f172a',
+                    color: '#94a3b8',
+                    border: '1px solid #334155',
+                    padding: '8px 14px',
+                    borderRadius: '6px',
+                    fontSize: '12px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isUpdatingUser}
+                  style={{
+                    backgroundColor: '#2563eb',
+                    color: '#fff',
+                    border: 'none',
+                    padding: '8px 16px',
+                    borderRadius: '6px',
+                    fontSize: '12px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                  }}
+                >
+                  <Check size={14} /> {isUpdatingUser ? 'Saving...' : 'Save & Apply'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ================= MODAL: Create Tour ================= */}
+      {isCreateTourOpen && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.75)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            padding: '16px',
+            boxSizing: 'border-box',
+          }}
+        >
+          <div
+            className="modal-box-responsive"
+            style={{
+              backgroundColor: '#1e293b',
+              border: '1px solid #334155',
+              borderRadius: '8px',
+              width: '100%',
+              maxWidth: '520px',
+              padding: '24px',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '16px',
+              maxHeight: '90vh',
+              overflowY: 'auto',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #334155', paddingBottom: '12px' }}>
+              <div>
+                <h3 style={{ fontSize: '16px', fontWeight: '700', margin: 0, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Compass size={18} color="#38bdf8" /> Create New Tour
+                </h3>
+                <p style={{ fontSize: '11px', color: '#94a3b8', margin: '2px 0 0 0' }}>
+                  You will automatically become the Tour Lead.
+                </p>
+              </div>
+              <button
+                onClick={() => setIsCreateTourOpen(false)}
+                style={{ backgroundColor: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '4px' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateTour} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', color: '#94a3b8', marginBottom: '4px', fontWeight: '500' }}>
+                  Tour Name *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Sajek Valley Monsoon Tour 2026"
+                  value={createTourForm.name}
+                  onChange={(e) => setCreateTourForm({ ...createTourForm, name: e.target.value })}
+                  style={{
+                    width: '100%',
+                    padding: '8px 12px',
+                    backgroundColor: '#0f172a',
+                    border: '1px solid #334155',
+                    borderRadius: '6px',
+                    color: '#fff',
+                    fontSize: '13px',
+                    boxSizing: 'border-box',
+                  }}
+                />
+              </div>
+
+              <div className="form-2col-responsive" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', color: '#94a3b8', marginBottom: '4px', fontWeight: '500' }}>
+                    Destination
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Sajek, Rangamati"
+                    value={createTourForm.destination}
+                    onChange={(e) => setCreateTourForm({ ...createTourForm, destination: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      backgroundColor: '#0f172a',
+                      border: '1px solid #334155',
+                      borderRadius: '6px',
+                      color: '#fff',
+                      fontSize: '13px',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', color: '#94a3b8', marginBottom: '4px', fontWeight: '500' }}>
+                    Total Target Budget (৳)
+                  </label>
+                  <input
+                    type="number"
+                    placeholder="e.g. 45000"
+                    value={createTourForm.budget}
+                    onChange={(e) => setCreateTourForm({ ...createTourForm, budget: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      backgroundColor: '#0f172a',
+                      border: '1px solid #334155',
+                      borderRadius: '6px',
+                      color: '#fff',
+                      fontSize: '13px',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div className="form-2col-responsive" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', color: '#94a3b8', marginBottom: '4px', fontWeight: '500' }}>
+                    Start Date
+                  </label>
+                  <input
+                    type="date"
+                    value={createTourForm.startDate}
+                    onChange={(e) => setCreateTourForm({ ...createTourForm, startDate: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      backgroundColor: '#0f172a',
+                      border: '1px solid #334155',
+                      borderRadius: '6px',
+                      color: '#fff',
+                      fontSize: '13px',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', color: '#94a3b8', marginBottom: '4px', fontWeight: '500' }}>
+                    End Date
+                  </label>
+                  <input
+                    type="date"
+                    value={createTourForm.endDate}
+                    onChange={(e) => setCreateTourForm({ ...createTourForm, endDate: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      backgroundColor: '#0f172a',
+                      border: '1px solid #334155',
+                      borderRadius: '6px',
+                      color: '#fff',
+                      fontSize: '13px',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', color: '#94a3b8', marginBottom: '4px', fontWeight: '500' }}>
+                  Tour Description / Plan Notes
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="Details regarding travel mode, itinerary, hotels..."
+                  value={createTourForm.description}
+                  onChange={(e) => setCreateTourForm({ ...createTourForm, description: e.target.value })}
+                  style={{
+                    width: '100%',
+                    padding: '8px 12px',
+                    backgroundColor: '#0f172a',
+                    border: '1px solid #334155',
+                    borderRadius: '6px',
+                    color: '#fff',
+                    fontSize: '13px',
+                    boxSizing: 'border-box',
+                    resize: 'vertical',
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
+                <button
+                  type="button"
+                  onClick={() => setIsCreateTourOpen(false)}
+                  style={{
+                    backgroundColor: '#0f172a',
+                    color: '#94a3b8',
+                    border: '1px solid #334155',
+                    padding: '8px 14px',
+                    borderRadius: '6px',
+                    fontSize: '12px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isCreatingTour}
+                  style={{
+                    backgroundColor: '#0284c7',
+                    color: '#fff',
+                    border: 'none',
+                    padding: '8px 16px',
+                    borderRadius: '6px',
+                    fontSize: '12px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                  }}
+                >
+                  <Plus size={14} /> {isCreatingTour ? 'Creating...' : 'Create Tour'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ================= MODAL: Join Tour ================= */}
+      {isJoinTourOpen && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.75)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            padding: '16px',
+            boxSizing: 'border-box',
+          }}
+        >
+          <div
+            className="modal-box-responsive"
+            style={{
+              backgroundColor: '#1e293b',
+              border: '1px solid #334155',
+              borderRadius: '8px',
+              width: '100%',
+              maxWidth: '420px',
+              padding: '24px',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '16px',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #334155', paddingBottom: '12px' }}>
+              <h3 style={{ fontSize: '16px', fontWeight: '700', margin: 0, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <MapPin size={18} color="#38bdf8" /> Join Tour
+              </h3>
+              <button
+                onClick={() => setIsJoinTourOpen(false)}
+                style={{ backgroundColor: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '4px' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleJoinTour} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', color: '#94a3b8', marginBottom: '4px', fontWeight: '500' }}>
+                  Tour Invite Code (e.g. TOUR-XXXXX)
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="TOUR-XXXXX"
+                  value={joinTourCode}
+                  onChange={(e) => setJoinTourCode(e.target.value.toUpperCase())}
+                  style={{
+                    width: '100%',
+                    padding: '8px 12px',
+                    backgroundColor: '#0f172a',
+                    border: '1px solid #334155',
+                    borderRadius: '6px',
+                    color: '#38bdf8',
+                    fontFamily: 'monospace',
+                    fontSize: '14px',
+                    letterSpacing: '1px',
+                    boxSizing: 'border-box',
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
+                <button
+                  type="button"
+                  onClick={() => setIsJoinTourOpen(false)}
+                  style={{
+                    backgroundColor: '#0f172a',
+                    color: '#94a3b8',
+                    border: '1px solid #334155',
+                    padding: '8px 14px',
+                    borderRadius: '6px',
+                    fontSize: '12px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isJoiningTour}
+                  style={{
+                    backgroundColor: '#0284c7',
+                    color: '#fff',
+                    border: 'none',
+                    padding: '8px 16px',
+                    borderRadius: '6px',
+                    fontSize: '12px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                  }}
+                >
+                  <Check size={14} /> {isJoiningTour ? 'Joining...' : 'Join Tour'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ================= MODAL: Record Expense ================= */}
+      {isAddExpenseOpen && selectedTourDetails && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.75)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            padding: '16px',
+            boxSizing: 'border-box',
+          }}
+        >
+          <div
+            className="modal-box-responsive"
+            style={{
+              backgroundColor: '#1e293b',
+              border: '1px solid #334155',
+              borderRadius: '8px',
+              width: '100%',
+              maxWidth: '480px',
+              padding: '24px',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '16px',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #334155', paddingBottom: '12px' }}>
+              <h3 style={{ fontSize: '16px', fontWeight: '700', margin: 0, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Receipt size={18} color="#f87171" /> Record Tour Expense
+              </h3>
+              <button
+                onClick={() => setIsAddExpenseOpen(false)}
+                style={{ backgroundColor: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '4px' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddExpense} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', color: '#94a3b8', marginBottom: '4px', fontWeight: '500' }}>
+                  Expense Title *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Scania AC Bus Tickets, Lunch at Dhanshiri"
+                  value={addExpenseForm.title}
+                  onChange={(e) => setAddExpenseForm({ ...addExpenseForm, title: e.target.value })}
+                  style={{
+                    width: '100%',
+                    padding: '8px 12px',
+                    backgroundColor: '#0f172a',
+                    border: '1px solid #334155',
+                    borderRadius: '6px',
+                    color: '#fff',
+                    fontSize: '13px',
+                    boxSizing: 'border-box',
+                  }}
+                />
+              </div>
+
+              <div className="form-2col-responsive" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', color: '#94a3b8', marginBottom: '4px', fontWeight: '500' }}>
+                    Amount (৳) *
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    placeholder="e.g. 3500"
+                    value={addExpenseForm.amount}
+                    onChange={(e) => setAddExpenseForm({ ...addExpenseForm, amount: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      backgroundColor: '#0f172a',
+                      border: '1px solid #334155',
+                      borderRadius: '6px',
+                      color: '#fff',
+                      fontSize: '13px',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', color: '#94a3b8', marginBottom: '4px', fontWeight: '500' }}>
+                    Category
+                  </label>
+                  <select
+                    value={addExpenseForm.category}
+                    onChange={(e) => setAddExpenseForm({ ...addExpenseForm, category: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      backgroundColor: '#0f172a',
+                      border: '1px solid #334155',
+                      borderRadius: '6px',
+                      color: '#fff',
+                      fontSize: '13px',
+                      boxSizing: 'border-box',
+                    }}
+                  >
+                    <option value="Food">Food / Meals</option>
+                    <option value="Transport">Transport / Tickets</option>
+                    <option value="Hotel">Hotel / Resort</option>
+                    <option value="Sightseeing">Sightseeing / Entry</option>
+                    <option value="Emergency">Emergency</option>
+                    <option value="Misc">Miscellaneous</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="form-2col-responsive" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', color: '#94a3b8', marginBottom: '4px', fontWeight: '500' }}>
+                    Spent By (Payer)
+                  </label>
+                  <select
+                    value={addExpenseForm.memberId}
+                    onChange={(e) => setAddExpenseForm({ ...addExpenseForm, memberId: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      backgroundColor: '#0f172a',
+                      border: '1px solid #334155',
+                      borderRadius: '6px',
+                      color: '#fff',
+                      fontSize: '13px',
+                      boxSizing: 'border-box',
+                    }}
+                  >
+                    <option value="">Shared Tour Fund</option>
+                    {selectedTourDetails.members.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name} ({m.role})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', color: '#94a3b8', marginBottom: '4px', fontWeight: '500' }}>
+                    Date
+                  </label>
+                  <input
+                    type="date"
+                    value={addExpenseForm.date}
+                    onChange={(e) => setAddExpenseForm({ ...addExpenseForm, date: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      backgroundColor: '#0f172a',
+                      border: '1px solid #334155',
+                      borderRadius: '6px',
+                      color: '#fff',
+                      fontSize: '13px',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', color: '#94a3b8', marginBottom: '4px', fontWeight: '500' }}>
+                  Notes / Receipt Info
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Paid via Cash from fund"
+                  value={addExpenseForm.notes}
+                  onChange={(e) => setAddExpenseForm({ ...addExpenseForm, notes: e.target.value })}
+                  style={{
+                    width: '100%',
+                    padding: '8px 12px',
+                    backgroundColor: '#0f172a',
+                    border: '1px solid #334155',
+                    borderRadius: '6px',
+                    color: '#fff',
+                    fontSize: '13px',
+                    boxSizing: 'border-box',
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
+                <button
+                  type="button"
+                  onClick={() => setIsAddExpenseOpen(false)}
+                  style={{
+                    backgroundColor: '#0f172a',
+                    color: '#94a3b8',
+                    border: '1px solid #334155',
+                    padding: '8px 14px',
+                    borderRadius: '6px',
+                    fontSize: '12px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isAddingExpense}
+                  style={{
+                    backgroundColor: '#b91c1c',
+                    color: '#fff',
+                    border: 'none',
+                    padding: '8px 16px',
+                    borderRadius: '6px',
+                    fontSize: '12px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                  }}
+                >
+                  <Receipt size={14} /> {isAddingExpense ? 'Saving...' : 'Record Expense'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ================= MODAL: Record Deposit ================= */}
+      {isAddDepositOpen && selectedTourDetails && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.75)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            padding: '16px',
+            boxSizing: 'border-box',
+          }}
+        >
+          <div
+            className="modal-box-responsive"
+            style={{
+              backgroundColor: '#1e293b',
+              border: '1px solid #334155',
+              borderRadius: '8px',
+              width: '100%',
+              maxWidth: '460px',
+              padding: '24px',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '16px',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #334155', paddingBottom: '12px' }}>
+              <h3 style={{ fontSize: '16px', fontWeight: '700', margin: 0, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Wallet size={18} color="#34d399" /> Record Member Deposit
+              </h3>
+              <button
+                onClick={() => setIsAddDepositOpen(false)}
+                style={{ backgroundColor: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '4px' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddDeposit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', color: '#94a3b8', marginBottom: '4px', fontWeight: '500' }}>
+                  Member Depositing *
+                </label>
+                <select
+                  required
+                  value={addDepositForm.memberId}
+                  onChange={(e) => setAddDepositForm({ ...addDepositForm, memberId: e.target.value })}
+                  style={{
+                    width: '100%',
+                    padding: '8px 12px',
+                    backgroundColor: '#0f172a',
+                    border: '1px solid #334155',
+                    borderRadius: '6px',
+                    color: '#fff',
+                    fontSize: '13px',
+                    boxSizing: 'border-box',
+                  }}
+                >
+                  <option value="">Select Member</option>
+                  {selectedTourDetails.members.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name} ({m.role}) — Already paid ৳{m.totalDeposited}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="form-2col-responsive" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', color: '#94a3b8', marginBottom: '4px', fontWeight: '500' }}>
+                    Amount (৳) *
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    placeholder="e.g. 5000"
+                    value={addDepositForm.amount}
+                    onChange={(e) => setAddDepositForm({ ...addDepositForm, amount: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      backgroundColor: '#0f172a',
+                      border: '1px solid #334155',
+                      borderRadius: '6px',
+                      color: '#fff',
+                      fontSize: '13px',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', color: '#94a3b8', marginBottom: '4px', fontWeight: '500' }}>
+                    Date
+                  </label>
+                  <input
+                    type="date"
+                    value={addDepositForm.date}
+                    onChange={(e) => setAddDepositForm({ ...addDepositForm, date: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      backgroundColor: '#0f172a',
+                      border: '1px solid #334155',
+                      borderRadius: '6px',
+                      color: '#fff',
+                      fontSize: '13px',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', color: '#94a3b8', marginBottom: '4px', fontWeight: '500' }}>
+                  Notes / Payment Method
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. bKash Trx 9AB12..., Cash to Accountant"
+                  value={addDepositForm.notes}
+                  onChange={(e) => setAddDepositForm({ ...addDepositForm, notes: e.target.value })}
+                  style={{
+                    width: '100%',
+                    padding: '8px 12px',
+                    backgroundColor: '#0f172a',
+                    border: '1px solid #334155',
+                    borderRadius: '6px',
+                    color: '#fff',
+                    fontSize: '13px',
+                    boxSizing: 'border-box',
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
+                <button
+                  type="button"
+                  onClick={() => setIsAddDepositOpen(false)}
+                  style={{
+                    backgroundColor: '#0f172a',
+                    color: '#94a3b8',
+                    border: '1px solid #334155',
+                    padding: '8px 14px',
+                    borderRadius: '6px',
+                    fontSize: '12px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isAddingDeposit}
+                  style={{
+                    backgroundColor: '#059669',
+                    color: '#fff',
+                    border: 'none',
+                    padding: '8px 16px',
+                    borderRadius: '6px',
+                    fontSize: '12px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                  }}
+                >
+                  <Wallet size={14} /> {isAddingDeposit ? 'Recording...' : 'Record Deposit'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ================= MODAL: Add Member ================= */}
+      {isAddMemberOpen && selectedTourDetails && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.75)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            padding: '16px',
+            boxSizing: 'border-box',
+          }}
+        >
+          <div
+            className="modal-box-responsive"
+            style={{
+              backgroundColor: '#1e293b',
+              border: '1px solid #334155',
+              borderRadius: '8px',
+              width: '100%',
+              maxWidth: '460px',
+              padding: '24px',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '16px',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #334155', paddingBottom: '12px' }}>
+              <h3 style={{ fontSize: '16px', fontWeight: '700', margin: 0, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <UserPlus size={18} color="#38bdf8" /> Add Tour Participant
+              </h3>
+              <button
+                onClick={() => setIsAddMemberOpen(false)}
+                style={{ backgroundColor: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '4px' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddMember} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', color: '#94a3b8', marginBottom: '4px', fontWeight: '500' }}>
+                  Member Name *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Tanvir Hasan"
+                  value={addMemberForm.name}
+                  onChange={(e) => setAddMemberForm({ ...addMemberForm, name: e.target.value })}
+                  style={{
+                    width: '100%',
+                    padding: '8px 12px',
+                    backgroundColor: '#0f172a',
+                    border: '1px solid #334155',
+                    borderRadius: '6px',
+                    color: '#fff',
+                    fontSize: '13px',
+                    boxSizing: 'border-box',
+                  }}
+                />
+              </div>
+
+              <div className="form-2col-responsive" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', color: '#94a3b8', marginBottom: '4px', fontWeight: '500' }}>
+                    Email (Optional)
+                  </label>
+                  <input
+                    type="email"
+                    placeholder="tanvir@example.com"
+                    value={addMemberForm.email}
+                    onChange={(e) => setAddMemberForm({ ...addMemberForm, email: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      backgroundColor: '#0f172a',
+                      border: '1px solid #334155',
+                      borderRadius: '6px',
+                      color: '#fff',
+                      fontSize: '13px',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', color: '#94a3b8', marginBottom: '4px', fontWeight: '500' }}>
+                    Role
+                  </label>
+                  <select
+                    value={addMemberForm.role}
+                    onChange={(e) => setAddMemberForm({ ...addMemberForm, role: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      backgroundColor: '#0f172a',
+                      border: '1px solid #334155',
+                      borderRadius: '6px',
+                      color: '#fff',
+                      fontSize: '13px',
+                      boxSizing: 'border-box',
+                    }}
+                  >
+                    <option value="MEMBER">MEMBER (Participant)</option>
+                    <option value="ACCOUNTANT">ACCOUNTANT (Manages Cash & Expenses)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', color: '#94a3b8', marginBottom: '4px', fontWeight: '500' }}>
+                  Phone Number (Optional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="+8801..."
+                  value={addMemberForm.phone}
+                  onChange={(e) => setAddMemberForm({ ...addMemberForm, phone: e.target.value })}
+                  style={{
+                    width: '100%',
+                    padding: '8px 12px',
+                    backgroundColor: '#0f172a',
+                    border: '1px solid #334155',
+                    borderRadius: '6px',
+                    color: '#fff',
+                    fontSize: '13px',
+                    boxSizing: 'border-box',
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
+                <button
+                  type="button"
+                  onClick={() => setIsAddMemberOpen(false)}
+                  style={{
+                    backgroundColor: '#0f172a',
+                    color: '#94a3b8',
+                    border: '1px solid #334155',
+                    padding: '8px 14px',
+                    borderRadius: '6px',
+                    fontSize: '12px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isAddingMember}
+                  style={{
+                    backgroundColor: '#2563eb',
+                    color: '#fff',
+                    border: 'none',
+                    padding: '8px 16px',
+                    borderRadius: '6px',
+                    fontSize: '12px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                  }}
+                >
+                  <UserPlus size={14} /> {isAddingMember ? 'Adding...' : 'Add Member'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Footer */}
+      <footer
+        style={{
+          borderTop: '1px solid #1e293b',
+          backgroundColor: '#0b1120',
+          padding: '16px 24px',
+          textAlign: 'center',
+          fontSize: '12px',
+          color: '#64748b',
+          marginTop: 'auto',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', flexWrap: 'wrap' }}>
+          <span>© {new Date().getFullYear()} {config.appName || 'Mess Meal Manager'}.</span>
+          <span>•</span>
+          <span>
+            Created by{' '}
+            <a
+              href={config.creatorPortfolio || '#'}
+              target="_blank"
+              rel="noreferrer"
+              style={{ color: '#f59e0b', textDecoration: 'none', fontWeight: '600' }}
+            >
+              {config.creatorName}
+            </a>
+          </span>
+          <span>•</span>
+          <a href="/docs" target="_blank" rel="noreferrer" style={{ color: '#38bdf8', textDecoration: 'none' }}>
+            API Docs
+          </a>
+        </div>
+      </footer>
     </div>
   );
 }

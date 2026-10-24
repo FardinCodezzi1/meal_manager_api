@@ -19,6 +19,7 @@ model User {
   updatedAt     DateTime       @updatedAt
   memberships   MessMember[]
   personalNotes PersonalNote[]
+  tourMemberships TourMember[]
 }
 
 model Mess {
@@ -168,3 +169,80 @@ enum BazarMode {
   QUICK
   CHECKLIST
 }
+
+model Tour {
+  id          String        @id @default(cuid())
+  name        String
+  description String?
+  destination String?
+  startDate   DateTime?
+  endDate     DateTime?
+  budget      Float         @default(0)
+  status      TourStatus    @default(ACTIVE)
+  inviteCode  String        @unique
+  creatorId   String
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  members     TourMember[]
+  expenses    TourExpense[]
+  deposits    TourDeposit[]
+}
+
+model TourMember {
+  id          String        @id @default(cuid())
+  tourId      String
+  userId      String?
+  name        String
+  email       String?
+  phone       String?
+  role        TourRole      @default(MEMBER)
+  joinedAt    DateTime      @default(now())
+  tour        Tour          @relation(fields: [tourId], references: [id], onDelete: Cascade)
+  user        User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  expenses    TourExpense[]
+  deposits    TourDeposit[]
+
+  @@unique([tourId, userId])
+}
+
+model TourExpense {
+  id        String      @id @default(cuid())
+  tourId    String
+  memberId  String?
+  title     String
+  amount    Float
+  category  String      @default("General")
+  date      DateTime    @default(now())
+  notes     String?
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  tour      Tour        @relation(fields: [tourId], references: [id], onDelete: Cascade)
+  member    TourMember? @relation(fields: [memberId], references: [id], onDelete: SetNull)
+}
+
+model TourDeposit {
+  id        String     @id @default(cuid())
+  tourId    String
+  memberId  String
+  amount    Float
+  date      DateTime   @default(now())
+  notes     String?
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  tour      Tour       @relation(fields: [tourId], references: [id], onDelete: Cascade)
+  member    TourMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+}
+
+enum TourRole {
+  LEAD
+  ACCOUNTANT
+  MEMBER
+}
+
+enum TourStatus {
+  PLANNING
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
