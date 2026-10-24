@@ -86,6 +86,18 @@ export default function SuperAdminConsole() {
   const [isLoadingAdmin, setIsLoadingAdmin] = useState(false);
   const [deletingMessId, setDeletingMessId] = useState<string | null>(null);
 
+  // Edit User / Reset Password Modal State
+  const [selectedUserForEdit, setSelectedUserForEdit] = useState<UserSummary | null>(null);
+  const [editUserForm, setEditUserForm] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    newPassword: '',
+    isSuperAdmin: false,
+  });
+  const [showPassword, setShowPassword] = useState(false);
+  const [isUpdatingUser, setIsUpdatingUser] = useState(false);
+
   // Toast Notification
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
@@ -280,6 +292,79 @@ export default function SuperAdminConsole() {
       showToast(error.message || 'Deletion failed', 'error');
     } finally {
       setDeletingMessId(null);
+    }
+  }
+
+  // Open Edit User / Reset Password Modal
+  function openEditUserModal(u: UserSummary) {
+    setSelectedUserForEdit(u);
+    setEditUserForm({
+      name: u.name,
+      email: u.email,
+      phone: u.phone || '',
+      newPassword: '',
+      isSuperAdmin: Boolean(u.isSuperAdmin),
+    });
+    setShowPassword(false);
+  }
+
+  // Generate a random strong password
+  function generateRandomPassword() {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%';
+    let pass = '';
+    for (let i = 0; i < 10; i++) {
+      pass += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    setEditUserForm((prev) => ({ ...prev, newPassword: pass }));
+    setShowPassword(true);
+    showToast('Strong password generated!', 'info');
+  }
+
+  // Copy credentials to clipboard
+  function copyCredentials() {
+    if (!editUserForm.newPassword) {
+      showToast('Enter or generate a new password first to copy credentials', 'error');
+      return;
+    }
+    const text = `Mess Meal Manager Account Credentials:\nEmail: ${editUserForm.email}\nNew Password: ${editUserForm.newPassword}`;
+    navigator.clipboard.writeText(text);
+    showToast('Credentials copied to clipboard!', 'success');
+  }
+
+  // Save User Edit / Password Reset
+  async function handleUpdateUser(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selectedUserForEdit || !authToken) return;
+
+    setIsUpdatingUser(true);
+    try {
+      const res = await fetch(`/api/admin/users/${selectedUserForEdit.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify(editUserForm),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to update user');
+      }
+
+      showToast(
+        editUserForm.newPassword
+          ? `User "${editUserForm.name}" updated and password reset successfully!`
+          : `User "${editUserForm.name}" profile updated!`,
+        'success'
+      );
+      setSelectedUserForEdit(null);
+      fetchAdminData(authToken);
+    } catch (err: unknown) {
+      const error = err as Error;
+      showToast(error.message || 'Error updating user', 'error');
+    } finally {
+      setIsUpdatingUser(false);
     }
   }
 
@@ -1198,12 +1283,13 @@ export default function SuperAdminConsole() {
                         <th style={{ padding: '12px 14px' }}>Current Mess</th>
                         <th style={{ padding: '12px 14px' }}>Role</th>
                         <th style={{ padding: '12px 14px' }}>Registered</th>
+                        <th style={{ padding: '12px 14px', textAlign: 'right' }}>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
                       {filteredUsers.length === 0 ? (
                         <tr>
-                          <td colSpan={6} style={{ padding: '24px', textAlign: 'center', color: '#64748b' }}>
+                          <td colSpan={7} style={{ padding: '24px', textAlign: 'center', color: '#64748b' }}>
                             No users matched your query.
                           </td>
                         </tr>
@@ -1247,6 +1333,26 @@ export default function SuperAdminConsole() {
                             <td style={{ padding: '14px', color: '#94a3b8', fontSize: '13px' }}>
                               {new Date(u.createdAt).toLocaleDateString()}
                             </td>
+                            <td style={{ padding: '14px', textAlign: 'right' }}>
+                              <button
+                                onClick={() => openEditUserModal(u)}
+                                style={{
+                                  backgroundColor: '#2563eb',
+                                  color: '#fff',
+                                  border: 'none',
+                                  padding: '6px 12px',
+                                  borderRadius: '6px',
+                                  fontSize: '12px',
+                                  fontWeight: '600',
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                }}
+                              >
+                                🔑 Reset / Edit
+                              </button>
+                            </td>
                           </tr>
                         ))
                       )}
@@ -1256,6 +1362,266 @@ export default function SuperAdminConsole() {
 
               </div>
             )}
+          </div>
+        )}
+
+        {/* Reset Password & Edit User Modal */}
+        {selectedUserForEdit && (
+          <div
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: 'rgba(0, 0, 0, 0.75)',
+              backdropFilter: 'blur(4px)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 10000,
+              padding: '20px',
+            }}
+          >
+            <div
+              style={{
+                backgroundColor: '#1e293b',
+                borderRadius: '16px',
+                border: '1px solid #475569',
+                padding: '28px',
+                width: '100%',
+                maxWidth: '520px',
+                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.8)',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '700', color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    🔑 Manage User & Reset Credentials
+                  </h3>
+                  <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#94a3b8' }}>
+                    User ID: <span style={{ fontFamily: 'monospace', color: '#38bdf8' }}>{selectedUserForEdit.id}</span>
+                  </p>
+                </div>
+                <button
+                  onClick={() => setSelectedUserForEdit(null)}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#94a3b8',
+                    fontSize: '20px',
+                    cursor: 'pointer',
+                    padding: '4px 8px',
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+
+              <form onSubmit={handleUpdateUser} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#cbd5e1', marginBottom: '6px' }}>
+                    Full Name
+                  </label>
+                  <input
+                    type="text"
+                    value={editUserForm.name}
+                    onChange={(e) => setEditUserForm({ ...editUserForm, name: e.target.value })}
+                    required
+                    style={{
+                      width: '100%',
+                      padding: '10px 14px',
+                      backgroundColor: '#0f172a',
+                      border: '1px solid #334155',
+                      borderRadius: '8px',
+                      color: '#f8fafc',
+                      fontSize: '14px',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#cbd5e1', marginBottom: '6px' }}>
+                      Email Address
+                    </label>
+                    <input
+                      type="email"
+                      value={editUserForm.email}
+                      onChange={(e) => setEditUserForm({ ...editUserForm, email: e.target.value })}
+                      required
+                      style={{
+                        width: '100%',
+                        padding: '10px 14px',
+                        backgroundColor: '#0f172a',
+                        border: '1px solid #334155',
+                        borderRadius: '8px',
+                        color: '#f8fafc',
+                        fontSize: '14px',
+                        boxSizing: 'border-box',
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#cbd5e1', marginBottom: '6px' }}>
+                      Phone (optional)
+                    </label>
+                    <input
+                      type="text"
+                      value={editUserForm.phone}
+                      onChange={(e) => setEditUserForm({ ...editUserForm, phone: e.target.value })}
+                      placeholder="+880..."
+                      style={{
+                        width: '100%',
+                        padding: '10px 14px',
+                        backgroundColor: '#0f172a',
+                        border: '1px solid #334155',
+                        borderRadius: '8px',
+                        color: '#f8fafc',
+                        fontSize: '14px',
+                        boxSizing: 'border-box',
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Password Reset Section */}
+                <div style={{ backgroundColor: '#090d16', padding: '16px', borderRadius: '10px', border: '1px solid #334155' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <label style={{ fontSize: '13px', fontWeight: '700', color: '#fbbf24' }}>
+                      🔐 Reset Password
+                    </label>
+                    <button
+                      type="button"
+                      onClick={generateRandomPassword}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: '#38bdf8',
+                        fontSize: '12px',
+                        cursor: 'pointer',
+                        fontWeight: '600',
+                        textDecoration: 'underline',
+                      }}
+                    >
+                      🎲 Generate Strong Password
+                    </button>
+                  </div>
+
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={editUserForm.newPassword}
+                      onChange={(e) => setEditUserForm({ ...editUserForm, newPassword: e.target.value })}
+                      placeholder="Leave blank to keep existing password"
+                      style={{
+                        width: '100%',
+                        padding: '10px 40px 10px 14px',
+                        backgroundColor: '#0f172a',
+                        border: '1px solid #475569',
+                        borderRadius: '8px',
+                        color: '#f8fafc',
+                        fontSize: '14px',
+                        fontFamily: showPassword ? 'monospace' : 'inherit',
+                        boxSizing: 'border-box',
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      style={{
+                        position: 'absolute',
+                        right: '10px',
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        background: 'none',
+                        border: 'none',
+                        color: '#94a3b8',
+                        cursor: 'pointer',
+                        fontSize: '14px',
+                      }}
+                    >
+                      {showPassword ? '👁️' : '🔒'}
+                    </button>
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#64748b', marginTop: '6px' }}>
+                    Minimum 6 characters. If populated, replaces the user's password immediately.
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 0' }}>
+                  <input
+                    type="checkbox"
+                    id="modalSuperAdminToggle"
+                    checked={editUserForm.isSuperAdmin}
+                    onChange={(e) => setEditUserForm({ ...editUserForm, isSuperAdmin: e.target.checked })}
+                    style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                  />
+                  <label htmlFor="modalSuperAdminToggle" style={{ fontSize: '13px', color: '#fbbf24', fontWeight: '600', cursor: 'pointer' }}>
+                    Grant Super Admin Privileges
+                  </label>
+                </div>
+
+                {/* Action Buttons */}
+                <div style={{ display: 'flex', gap: '10px', marginTop: '10px', flexWrap: 'wrap' }}>
+                  <button
+                    type="submit"
+                    disabled={isUpdatingUser}
+                    style={{
+                      flex: 1,
+                      backgroundColor: '#2563eb',
+                      color: '#ffffff',
+                      border: 'none',
+                      padding: '12px 18px',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      fontWeight: '700',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {isUpdatingUser ? 'Saving Changes...' : '💾 Save User Changes'}
+                  </button>
+
+                  {editUserForm.newPassword && (
+                    <button
+                      type="button"
+                      onClick={copyCredentials}
+                      style={{
+                        backgroundColor: '#059669',
+                        color: '#ffffff',
+                        border: 'none',
+                        padding: '12px 16px',
+                        borderRadius: '8px',
+                        fontSize: '13px',
+                        fontWeight: '700',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      📋 Copy Credentials
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => setSelectedUserForEdit(null)}
+                    style={{
+                      backgroundColor: '#334155',
+                      color: '#cbd5e1',
+                      border: 'none',
+                      padding: '12px 16px',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      fontWeight: '600',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
         )}
 

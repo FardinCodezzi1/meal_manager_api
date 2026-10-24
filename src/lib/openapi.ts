@@ -706,5 +706,35 @@ export const openApiSpec = {
         },
       },
     },
+    '/api/admin/users/{id}': {
+      put: {
+        tags: ['Super Admin'],
+        summary: 'Reset user password or update profile details (Super Admin only)',
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  name: { type: 'string', example: 'Updated Name' },
+                  email: { type: 'string', format: 'email', example: 'user@example.com' },
+                  phone: { type: 'string', example: '+8801700000000' },
+                  newPassword: { type: 'string', format: 'password', example: 'NewSecretPass123' },
+                  isSuperAdmin: { type: 'boolean', example: false },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: { description: 'User account updated / password reset' },
+          400: { description: 'Validation error' },
+          403: { description: 'Forbidden: Super Admin access required' },
+          404: { description: 'User not found' },
+        },
+      },
+    },
   },
 };

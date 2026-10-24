@@ -682,8 +682,65 @@ async function runTests() {
     logSuccess(`Super Admin successfully deleted test mess (${dummyMessId}) via /api/admin/messes/[id]`);
   }
 
+  // 22. Super Admin User Credentials & Password Reset
+  logStep('22. Super Admin Reset Forgotten User Password (/api/admin/users/[id])');
+  const forgottenUserEmail = `forgotten_${timestamp}@test.com`;
+  const regForgotten = await request('/api/auth/register', {
+    method: 'POST',
+    body: JSON.stringify({
+      name: 'Forgotten Member',
+      email: forgottenUserEmail,
+      password: 'InitialPassword123',
+    }),
+  });
+  if (regForgotten.status !== 201) {
+    throw new Error(`Failed to create test user for reset: ${JSON.stringify(regForgotten.data)}`);
+  }
+  const targetUserId = regForgotten.data.user.id;
+
+  // Super Admin resets their password and updates phone
+  const resetRes = await request(`/api/admin/users/${targetUserId}`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${adminToken}` },
+    body: JSON.stringify({
+      name: 'Recovered Member',
+      phone: '+8801799988877',
+      newPassword: 'BrandNewSecretPass999!',
+    }),
+  });
+  if (resetRes.status !== 200 || !resetRes.data.passwordReset) {
+    throw new Error(`Admin password reset failed: ${JSON.stringify(resetRes.data)}`);
+  }
+  logSuccess(`Super Admin successfully reset password for user ${targetUserId}`);
+
+  // Old password must fail
+  const oldLoginFail = await request('/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({
+      email: forgottenUserEmail,
+      password: 'InitialPassword123',
+    }),
+  });
+  if (oldLoginFail.status !== 401) {
+    throw new Error(`Expected 401 for old password, got ${oldLoginFail.status}`);
+  }
+  logSuccess('Verified: Old password is no longer valid');
+
+  // New password must succeed
+  const newLoginSuccess = await request('/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({
+      email: forgottenUserEmail,
+      password: 'BrandNewSecretPass999!',
+    }),
+  });
+  if (newLoginSuccess.status !== 200 || !newLoginSuccess.data.token) {
+    throw new Error(`Login with reset password failed: ${JSON.stringify(newLoginSuccess.data)}`);
+  }
+  logSuccess(`Verified: User logged in successfully with the newly reset credentials! Name is now: ${newLoginSuccess.data.user.name}`);
+
   console.log('\n\x1b[32m=======================================================');
-  console.log('🎉 ALL EXTENDED INTEGRATION TESTS PASSED! (21/21)');
+  console.log('🎉 ALL EXTENDED INTEGRATION TESTS PASSED! (22/22)');
   console.log('=======================================================\x1b[0m\n');
 }
 
