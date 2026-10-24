@@ -1,98 +1,125 @@
 <p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
+  <img src="https://nestjs.com/img/logo-small.svg" width="100" alt="Nest Logo" />
 </p>
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+<h1 align="center">🥘 Mess Meal Manager API (NestJS)</h1>
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
+<p align="center">
+  High-performance, production-ready backend API built with <strong>NestJS</strong>, <strong>Prisma ORM</strong>, and <strong>Neon PostgreSQL</strong>.
 </p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
 
-## Description
+<p align="center">
+  <img src="https://img.shields.io/badge/NestJS-E0234E?style=flat&logo=nestjs&logoColor=white" alt="NestJS" />
+  <img src="https://img.shields.io/badge/Prisma-2D3748?style=flat&logo=prisma&logoColor=white" alt="Prisma" />
+  <img src="https://img.shields.io/badge/PostgreSQL-Neon-4169E1?style=flat&logo=postgresql&logoColor=white" alt="PostgreSQL" />
+  <img src="https://img.shields.io/badge/TypeScript-3178C6?style=flat&logo=typescript&logoColor=white" alt="TypeScript" />
+  <img src="https://img.shields.io/badge/OpenAPI-3.0.3-6BA539?style=flat&logo=swagger&logoColor=white" alt="Swagger" />
+</p>
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+---
 
-## Project setup
+## 🚀 Key Features
 
+* **Authentication & Role-Based Access Control**:
+  * Secure JWT authentication with bcrypt password hashing.
+  * Roles: `MANAGER` and `MEMBER` per mess; `LEAD`, `ACCOUNTANT`, `MEMBER` per tour; and platform `SUPER_ADMIN`.
+  * Safe account deactivation preserving roommate financial ledgers and anonymizing historical entries.
+* **Mess & Roommate Management**:
+  * Invite code generation (`MESS-XXXXX`) for seamless roommate onboarding.
+  * Dynamic monthly cycles (`YYYY-MM`) with automatic creation and isolation.
+  * Safe mess closure guardrails with manager password verification.
+* **Manager Rotation Queue & Anti-Cheat Audit Logs**:
+  * Dynamic sequence queues for fair, democratic manager handoffs.
+  * Automatic monthly rotation hook on new month creation.
+  * Immutable, tamper-evident audit logs tracking all manual overrides and queue reorderings.
+* **Bazar Expense Tracking & Approval Workflow**:
+  * 2-mode entry: Quick expense logging or detailed itemized checklists.
+  * Approval workflow: Member submissions remain `PENDING` until approved by the Manager.
+  * Summary calculations strictly isolate unapproved pending expenses.
+* **Daily Meal Tracking & Automated Leave Handling**:
+  * Decimal meal recording (`lunch`, `dinner`).
+  * Leave request approval workflow that automatically zeroes out meals (`lunch: 0, dinner: 0, isLeave: true`).
+* **Financial Reconciliation & Real-Time Balances**:
+  * Member deposits management (Manager only).
+  * Real-time calculation of total meals, total approved bazar expenses, and exact meal rate.
+  * Individual member balance calculations (surplus/refund vs. amount due).
+* **Tour Expense Management System**:
+  * Comprehensive group trip budgeting, expenses, deposits, and per-member cost distribution.
+  * Role delegation: Tour Lead can appoint Tour Accountants.
+  * Offline participant support for friends without accounts.
+* **Interactive Documentation & OpenAPI 3.0.3**:
+  * Built-in interactive Swagger UI at `/api/docs`.
+  * Raw OpenAPI specification at `/api/openapi.json`.
+
+---
+
+## 🛠 Project Setup
+
+### 1. Install Dependencies
 ```bash
-$ npm install
+npm install
 ```
 
-## Compile and run the project
-
-```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+### 2. Environment Configuration
+Ensure your `.env` file contains your Neon PostgreSQL connection string and JWT secret:
+```env
+DATABASE_URL="postgresql://neondb_owner:***@ep-floral-breeze-azrjh0ey-pooler.c-3.ap-southeast-1.aws.neon.tech/neondb?channel_binding=require&sslmode=require"
+DIRECT_URL="postgresql://neondb_owner:***@ep-floral-breeze-azrjh0ey.c-3.ap-southeast-1.aws.neon.tech/neondb?sslmode=require"
+JWT_SECRET="your-super-secret-jwt-key"
+JWT_EXPIRES_IN="30d"
+PORT=3000
 ```
 
-## Run tests
-
+### 3. Generate Prisma Client
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+npm run db:generate
 ```
 
-## Deployment
+---
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+## 🏃 Running the Application
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
-
+### Development (Hot-Reload)
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+npm run start:dev
+# or
+npm run dev
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+### Production Build & Execution
+```bash
+npm run build
+npm run start:prod
+```
 
-## Resources
+The server will start on `http://localhost:3000`.
+* **Swagger API Docs**: [http://localhost:3000/api/docs](http://localhost:3000/api/docs)
+* **OpenAPI Spec**: [http://localhost:3000/api/openapi.json](http://localhost:3000/api/openapi.json)
 
-Check out a few resources that may come in handy when working with NestJS:
+---
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+## 🧪 Automated Testing
 
-## Support
+Run the full end-to-end integration test suite covering all 24 architectural workflows:
+```bash
+npm run test:flow
+```
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+---
 
-## Stay in touch
+## 🚢 Recommended Production Deployment (Render)
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+Because this backend uses persistent connection pooling with Neon PostgreSQL, deploy as a **Render Web Service**:
 
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+1. Create a new **Web Service** on [Render](https://render.com).
+2. Connect your GitHub repository.
+3. Configure the service:
+   - **Region**: `Singapore (Southeast Asia)` *(matches Neon DB region for ~2ms latency)*
+   - **Environment**: `Node`
+   - **Build Command**: `npm install && npm run build`
+   - **Start Command**: `npm run start:prod`
+4. Add Environment Variables:
+   - `DATABASE_URL`: Your pooled Neon connection string.
+   - `DIRECT_URL`: Your direct Neon connection string.
+   - `JWT_SECRET`: Your production JWT secret.
+   - `PORT`: `10000` (Render default).

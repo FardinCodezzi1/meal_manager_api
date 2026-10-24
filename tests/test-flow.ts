@@ -611,7 +611,7 @@ async function runTests() {
   }
   const config = configRes.data.config;
   if (
-    (config.appName !== 'Mess Meal Manager' && config.appName !== 'Bache Lorr') ||
+    (config.appName !== 'Mess Meal Manager' && config.appName !== 'Bache Lorr' && config.appName !== 'Tin Takar Mess') ||
     config.creatorName !== 'Fardin Abu Ubaid' ||
     config.creatorEmail !== 'fardin1.codezzi@gmail.com' ||
     config.creatorPortfolio !== 'https://portfolio-fardin.vercel.app'
